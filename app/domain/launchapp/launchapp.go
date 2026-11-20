@@ -44,21 +44,30 @@ func New(cfg Config) (*App, error) {
 	return &App{cfg: cfg}, nil
 }
 
-// Open trades a launch token for the session cookie, and goes home.
+// Open trades a launch token for the session cookie, and goes home, or to
+// Settings when the address says to=settings: the first start after
+// installing, when there is a printer to set up before anything else.
 //
 // A token already used -- the address reloaded, or opened from the history --
 // is no good; but if the browser already has the session, it is simply sent
-// home rather than told off.
+// on rather than told off.
 func (a *App) Open(w http.ResponseWriter, r *http.Request) {
+	// One fixed place or home, never an address from the query: nothing here
+	// sends a browser anywhere a link chose.
+	to := "/"
+	if r.URL.Query().Get("to") == "settings" {
+		to = "/settings"
+	}
+
 	if a.cfg.Sessions.Redeem(r.URL.Query().Get("k")) {
 		http.SetCookie(w, a.cfg.Sessions.Cookie())
-		http.Redirect(w, r, "/", http.StatusSeeOther)
+		http.Redirect(w, r, to, http.StatusSeeOther)
 
 		return
 	}
 
 	if mid.HasSession(r.Context()) {
-		http.Redirect(w, r, "/", http.StatusSeeOther)
+		http.Redirect(w, r, to, http.StatusSeeOther)
 		return
 	}
 

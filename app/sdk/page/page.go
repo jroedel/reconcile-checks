@@ -35,6 +35,13 @@ var baseFS embed.FS
 //go:embed assets
 var assetsFS embed.FS
 
+// Icon is the program's icon, 256 pixels square, as a PNG: for the Linux
+// menu entry an install writes (foundation/shortcut).
+func Icon() []byte {
+	b, _ := assetsFS.ReadFile("assets/img/icon-256.png")
+	return b
+}
+
 // StaticPrefix is where the embedded files are served.
 const StaticPrefix = "/static/"
 

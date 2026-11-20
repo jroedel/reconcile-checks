@@ -135,3 +135,32 @@ jobs:
           out=$(./rc.exe version)
           echo "$out"
           [[ "$out" == "reconcile-checks v0.0.0-ci windows/amd64 "* ]] || { echo "the GUI build did not print its version"; exit 1; }
+
+      # Installing itself, as a release does on its first run, into a
+      # %LocalAppData% and %AppData% of the step's own: the program copied in,
+      # the Start menu shortcut written through WScript.Shell and pointing at
+      # it, read back the same way Windows reads it; then uninstall removes
+      # both.
+      - name: installing itself, and the Start menu shortcut
+        run: |
+          go build -ldflags='-s -w -X main.version=v0.0.1 -H windowsgui' -o rc-install.exe ./cmd/reconcile-checks
+
+          mkdir -p "$RUNNER_TEMP/local" "$RUNNER_TEMP/roaming"
+          export LOCALAPPDATA="$(cygpath -w "$RUNNER_TEMP/local")"
+          export APPDATA="$(cygpath -w "$RUNNER_TEMP/roaming")"
+
+          ./rc-install.exe install
+
+          exe="$RUNNER_TEMP/local/Programs/reconcile-checks/reconcile-checks.exe"
+          out=$("$exe" version)
+          echo "$out"
+          [[ "$out" == "reconcile-checks v0.0.1 windows/amd64 "* ]] || { echo "the installed program doesn't run"; exit 1; }
+
+          lnk="$(cygpath -w "$RUNNER_TEMP/roaming/Microsoft/Windows/Start Menu/Programs/Reconcile Checks.lnk")"
+          target=$(powershell -NoProfile -Command "(New-Object -ComObject WScript.Shell).CreateShortcut('$lnk').TargetPath" | tr -d '\r')
+          echo "the shortcut points at $target"
+          [ "${target,,}" = "$(cygpath -w "$exe" | tr '[:upper:]' '[:lower:]')" ] || { echo "it should point at the installed program"; exit 1; }
+
+          ./rc-install.exe uninstall
+          [ ! -e "$exe" ] || { echo "uninstall left the program"; exit 1; }
+          [ ! -e "$(cygpath -u "$lnk")" ] || { echo "uninstall left the shortcut"; exit 1; }

@@ -253,6 +253,9 @@ func start(opt options, stdout, stderr io.Writer) (*relaunch, error) {
 	}()
 
 	address := "http://127.0.0.1:" + port + "/open?k=" + url.QueryEscape(sessions.Mint())
+	if opt.settings {
+		address += "&to=settings"
+	}
 	show(address, opt.noBrowser, stdout, log)
 
 	if err := web.Serve(ctx, log, shutdownGrace, ln, handler); err != nil {

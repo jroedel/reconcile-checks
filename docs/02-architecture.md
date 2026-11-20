@@ -177,4 +177,8 @@ A person never needs it. For development and support only:
 | `reconcile-checks --config <path>` | Uses another config and its data directory |
 | `reconcile-checks version` | The version, OS and architecture, and the update key's fingerprint (`key:…`, or `key:none`) |
 | `reconcile-checks update [--check] [--forget]` | Updates now, or only says whether there is one; `--forget` lets it install again a version it gave up on |
+| `reconcile-checks install` | Copies itself to where it runs from and adds the menu shortcut, without starting (a release does this by itself on its first run) |
+| `reconcile-checks uninstall` | Removes the installed program and its shortcut; never the data or the settings |
+| `reconcile-checks --settings` | Opens the browser at Settings (the first start after installing) |
+| `reconcile-checks --no-install` | Runs a release from where it is, without installing itself |
 

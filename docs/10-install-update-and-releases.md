@@ -19,6 +19,33 @@ requests are cited as sion-backup#N.
 
 No installer, no administrator, no second program, no runtime.
 
+**As built** (`cmd/reconcile-checks/install.go`, `foundation/install`,
+`foundation/shortcut`): only a release (a strict `vX.Y.Z`) started as a
+person starts it installs itself: never a development build, and never one
+started with `--config` (development and the tests) or `--no-install`.
+
+- If a copy is already running, the download hands over to it as any second
+  start does, and installs nothing.
+- Otherwise it copies itself in when nothing is installed or the installed
+  copy is older, writes the shortcut, starts the installed copy, and exits.
+  The first start opens Settings, where the printer is set up; a download
+  run again over an install just opens the program.
+- The shortcut: on Windows `Reconcile Checks.lnk` in the person's own Start
+  menu (`%AppData%\Microsoft\Windows\Start Menu\Programs`), written through
+  `WScript.Shell` (`github.com/go-ole/go-ole`), with the program's own icon;
+  on Linux `reconcile-checks.desktop` in `~/.local/share/applications`, with
+  the icon in `~/.local/share/icons/hicolor/256x256/apps`. Every start of
+  the installed copy puts it back if it was removed.
+- `reconcile-checks install` does the copy and the shortcut without
+  starting anything; `reconcile-checks uninstall` removes the program and
+  the shortcut, refuses while the program runs, and never touches the data
+  or the settings, saying where they are.
+
+Tested by the `first-run` case of `make selfupdate-e2e` on Linux (the
+download run as it is, with no config, in a container's own home), and on
+Windows in CI (`install`, the `.lnk` read back through `WScript.Shell`,
+`uninstall`).
+
 The copy is made by reading and writing the file, not by the system's copy,
 so the "downloaded from the internet" mark stays on the download and
 doesn't follow the installed program: SmartScreen asks once, not again at

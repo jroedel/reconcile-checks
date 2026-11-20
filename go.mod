@@ -10,6 +10,7 @@ go 1.26.11
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/OpenPrinting/goipp v1.2.0
+	github.com/go-ole/go-ole v1.3.0
 	golang.org/x/image v0.48.0
 	golang.org/x/net v0.63.0
 	golang.org/x/sys v0.50.0

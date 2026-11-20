@@ -1,13 +1,17 @@
 // Package settingsapp is the Settings pages (docs/03-the-local-app.md,
 // "Settings"): this computer's printers, found on the network or typed in,
-// with what each says it can do; its accounts, each with the stock, printer,
-// tray, media type, feed and offsets it prints with; and the calibration page
-// that sets the offsets.
+// with what each says it can do, how checks go through it (the tray, the
+// media type, which way up, the offset) and the calibration page that sets
+// the offset; and its accounts, each with its stock and printer.
+//
+// The printer comes first and stands alone, so that it can be set up and
+// calibrated before there is any account, which is before signing in to
+// Reconcile.
 //
 // Every page that shows a printer asks the printer, then and there: a tray
 // list remembered from last month is the kind of thing that is wrong on the
 // one day it matters. A printer that can't be reached is said so, and its
-// account can still be edited by hand.
+// settings can still be edited by hand.
 package settingsapp
 
 import (
@@ -193,9 +197,35 @@ func (a *App) AddPrinter(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, printerPage(strings.TrimSpace(p.Name)), http.StatusSeeOther)
 }
 
-// Printer shows what a printer says about itself.
+// printerView is a printer's page.
+type printerView struct {
+	Printer  settingsbus.Printer
+	Attrs    ipp.Attributes
+	Asked    string // the printer's error, when it didn't answer
+	Changed  bool   // its certificate changed
+	Unpinned bool   // ipps, and no certificate remembered
+	Stocks   []string
+	Error    string // what was refused, from a form on the page
+	Field    string
+	Saved    bool
+}
+
+// Printer shows what a printer says about itself, how checks go through it,
+// and the calibration page.
 func (a *App) Printer(w http.ResponseWriter, r *http.Request) {
-	name := r.URL.Query().Get("name")
+	p, err := a.cfg.Settings.Printer(r.URL.Query().Get("name"))
+	if err != nil {
+		a.notFound(w, r)
+		return
+	}
+
+	a.printer(w, r, http.StatusOK, p, nil)
+}
+
+// SavePrinterChecks keeps how checks go through a printer: the tray, the
+// media type, which way up, and the offset.
+func (a *App) SavePrinterChecks(w http.ResponseWriter, r *http.Request) {
+	name := r.PostFormValue("name")
 
 	p, err := a.cfg.Settings.Printer(name)
 	if err != nil {
@@ -203,19 +233,94 @@ func (a *App) Printer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	p.Tray = strings.TrimSpace(r.PostFormValue("tray"))
+	p.MediaType = strings.TrimSpace(r.PostFormValue("media_type"))
+	p.Feed = r.PostFormValue("feed")
+
+	err = parseOffset(r, &p.Offset)
+	if err == nil {
+		err = a.cfg.Settings.SavePrinter(name, p)
+	}
+
+	if err != nil {
+		a.printer(w, r, http.StatusUnprocessableEntity, p, err)
+		return
+	}
+
+	http.Redirect(w, r, printerPage(name)+"&saved=1", http.StatusSeeOther)
+}
+
+// Calibrate prints the calibration page for a stock on a printer.
+func (a *App) Calibrate(w http.ResponseWriter, r *http.Request) {
+	p, err := a.cfg.Settings.Printer(r.PostFormValue("name"))
+	if err != nil {
+		a.notFound(w, r)
+		return
+	}
+
+	stock := r.PostFormValue("stock")
+
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+
+	sent, err := a.cfg.Print.Calibrate(ctx, p.Name, stock)
+	if err != nil {
+		a.printer(w, r, http.StatusUnprocessableEntity, p, err)
+		return
+	}
+
+	a.cfg.Render.Render(w, r, http.StatusOK, "calibrating", struct {
+		Printer settingsbus.Printer
+		Sent    printbus.Sent
+		Back    string
+	}{p, sent, printerPage(p.Name)})
+}
+
+func (a *App) printer(w http.ResponseWriter, r *http.Request, status int, p settingsbus.Printer, failed error) {
 	ctx, cancel := context.WithTimeout(r.Context(), askPrinter)
 	defer cancel()
 
-	attrs, err := a.cfg.Print.Attributes(ctx, name)
+	attrs, err := a.cfg.Print.Attributes(ctx, p.Name)
 	_, changed := errors.AsType[ipp.PinChanged](err)
 
-	a.cfg.Render.Render(w, r, http.StatusOK, "printer", struct {
-		Printer  settingsbus.Printer
-		Attrs    ipp.Attributes
-		Error    string
-		Changed  bool
-		Unpinned bool
-	}{p, attrs, sentence(err), changed, strings.HasPrefix(strings.ToLower(p.URL), "ipps:") && p.Pin == ""})
+	v := printerView{
+		Printer:  p,
+		Attrs:    attrs,
+		Asked:    sentence(err),
+		Changed:  changed,
+		Unpinned: strings.HasPrefix(strings.ToLower(p.URL), "ipps:") && p.Pin == "",
+		Stocks:   layoutbus.Names(),
+		Error:    sentence(failed),
+		Saved:    r.URL.Query().Get("saved") != "",
+	}
+
+	if inv, ok := errors.AsType[settingsbus.Invalid](failed); ok {
+		v.Field = inv.Field
+	}
+
+	a.cfg.Render.Render(w, r, status, "printer", v)
+}
+
+// parseOffset reads the offset fields; an empty one is 0.
+func parseOffset(r *http.Request, o *settingsbus.Offset) error {
+	for _, f := range []struct {
+		name string
+		to   *float64
+	}{{"offset_x", &o.X}, {"offset_y", &o.Y}} {
+		v := strings.TrimSpace(r.PostFormValue(f.name))
+		if v == "" {
+			*f.to = 0
+			continue
+		}
+
+		n, err := strconv.ParseFloat(strings.Replace(v, ",", ".", 1), 64)
+		if err != nil {
+			return settingsbus.Invalid{Field: "offset", Sentence: "An offset is a number of millimetres, such as 0.5 or -1.2."}
+		}
+		*f.to = n
+	}
+
+	return nil
 }
 
 // Trust keeps the printer's certificate as it is now.
@@ -251,16 +356,13 @@ type accountView struct {
 	Ceiling  string
 	Stocks   []string
 	Printers []settingsbus.Printer
-	Attrs    ipp.Attributes // the chosen printer's, when it answered
-	Asked    string         // the printer's error, when it didn't
 	Error    string
 	Field    string
-	Sent     *printbus.Sent
 }
 
 // NewAccount is the form for an account this computer will print on.
 func (a *App) NewAccount(w http.ResponseWriter, r *http.Request) {
-	acct := settingsbus.Account{Stock: layoutbus.Names()[0], MediaType: "stationery-preprinted", Feed: settingsbus.DefaultFeed}
+	acct := settingsbus.Account{Stock: layoutbus.Names()[0]}
 	a.account(w, r, http.StatusOK, true, acct, nil)
 }
 
@@ -293,31 +395,6 @@ func (a *App) SaveAccount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, "/settings/accounts/"+acct.Key+"?saved=1", http.StatusSeeOther)
-}
-
-// Calibrate prints the account's calibration page.
-func (a *App) Calibrate(w http.ResponseWriter, r *http.Request) {
-	key := r.PathValue("key")
-
-	acct, err := a.cfg.Settings.Account(key)
-	if err != nil {
-		a.notFound(w, r)
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-
-	sent, err := a.cfg.Print.Calibrate(ctx, key)
-	if err != nil {
-		a.account(w, r, http.StatusUnprocessableEntity, false, acct, err)
-		return
-	}
-
-	a.cfg.Render.Render(w, r, http.StatusOK, "calibrating", struct {
-		Account settingsbus.Account
-		Sent    printbus.Sent
-	}{acct, sent})
 }
 
 // Job shows where a job is.
@@ -362,22 +439,8 @@ func (a *App) account(w http.ResponseWriter, r *http.Request, status int, isNew 
 		v.Field = inv.Field
 	}
 
-	// The trays and media types offered are the printer's own, asked now.
-	printer := acct.Printer
-	if printer == "" && len(s.Printers) > 0 {
-		printer = s.Printers[0].Name
-		v.Account.Printer = printer
-	}
-
-	if printer != "" {
-		ctx, cancel := context.WithTimeout(r.Context(), askPrinter)
-		defer cancel()
-
-		attrs, err := a.cfg.Print.Attributes(ctx, printer)
-		if err != nil {
-			v.Asked = sentence(err)
-		}
-		v.Attrs = attrs
+	if acct.Printer == "" && len(s.Printers) > 0 {
+		v.Account.Printer = s.Printers[0].Name
 	}
 
 	a.cfg.Render.Render(w, r, status, "account", v)
@@ -385,14 +448,11 @@ func (a *App) account(w http.ResponseWriter, r *http.Request, status int, isNew 
 
 func parseAccount(r *http.Request) (settingsbus.Account, error) {
 	acct := settingsbus.Account{
-		Key:       strings.TrimSpace(r.PostFormValue("key")),
-		Name:      r.PostFormValue("name"),
-		Last4:     r.PostFormValue("last4"),
-		Stock:     r.PostFormValue("stock"),
-		Printer:   r.PostFormValue("printer"),
-		Tray:      strings.TrimSpace(r.PostFormValue("tray")),
-		MediaType: strings.TrimSpace(r.PostFormValue("media_type")),
-		Feed:      r.PostFormValue("feed"),
+		Key:     strings.TrimSpace(r.PostFormValue("key")),
+		Name:    r.PostFormValue("name"),
+		Last4:   r.PostFormValue("last4"),
+		Stock:   r.PostFormValue("stock"),
+		Printer: r.PostFormValue("printer"),
 	}
 
 	if c := strings.TrimSpace(r.PostFormValue("ceiling")); c != "" {
@@ -401,22 +461,6 @@ func parseAccount(r *http.Request) (settingsbus.Account, error) {
 			return acct, settingsbus.Invalid{Field: "ceiling", Sentence: "The ceiling is an amount, such as 10,000.00."}
 		}
 		acct.Ceiling = cents
-	}
-
-	for _, f := range []struct {
-		name string
-		to   *float64
-	}{{"offset_x", &acct.Offset.X}, {"offset_y", &acct.Offset.Y}} {
-		v := strings.TrimSpace(r.PostFormValue(f.name))
-		if v == "" {
-			continue
-		}
-
-		n, err := strconv.ParseFloat(strings.Replace(v, ",", ".", 1), 64)
-		if err != nil {
-			return acct, settingsbus.Invalid{Field: "offset", Sentence: "An offset is a number of millimetres, such as 0.5 or -1.2."}
-		}
-		*f.to = n
 	}
 
 	return acct, nil

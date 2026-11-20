@@ -1,7 +1,8 @@
-// Package printbus prints: a page for an account goes to that account's
-// printer, through its tray, as its media type, shifted by its offset, with
-// every option that decides where ink lands stated in the job
-// (docs/05-printing.md, "Options set by the program, every time").
+// Package printbus prints: a page goes to a printer, through the tray it
+// takes checks in, as its media type for check stock, shifted by its
+// offset, with every option that decides where ink lands stated in the job
+// (docs/05-printing.md, "Options set by the program, every time"). A check
+// goes to its account's printer.
 //
 // That is the calibration page, and a check: the register (checkbus) claims
 // the number and makes the check's PDF, and this package sends it.
@@ -41,43 +42,44 @@ type Sent struct {
 	Job     int    // the printer's id for the job
 }
 
-// Job is the print job for a page on the account's stock: the options every
-// check, and every calibration page, is printed with.
-func Job(a settingsbus.Account, l layoutbus.Layout, name string) ipp.Job {
+// Job is the print job for a page on a stock, through a printer: the options
+// every check, and every calibration page, is printed with.
+func Job(p settingsbus.Printer, l layoutbus.Layout, name string) ipp.Job {
 	return ipp.Job{
 		Name:    name,
 		Format:  "application/pdf",
 		Sides:   "one-sided",
-		Source:  a.Tray,
-		Type:    a.MediaType,
+		Source:  p.Tray,
+		Type:    p.MediaType,
 		Media:   l.Page.Media,
 		Scaling: "none",
 		Copies:  1,
 	}
 }
 
-// Calibrate prints the calibration page for the account (docs/04-stock-and-
-// layout.md, "Alignment and calibration"): the stock's boxes and rules, and
-// rulers, on plain paper, through the same tray with the same options as a
-// check, and shifted by the same offset, so that holding it against a check
-// shows where this printer would put the ink now.
-func (b *Business) Calibrate(ctx context.Context, key string) (Sent, error) {
-	a, err := b.settings.Account(key)
+// Calibrate prints the calibration page for a stock on a printer
+// (docs/04-stock-and-layout.md, "Alignment and calibration"): the stock's
+// boxes and rules, and rulers, on plain paper, through the same tray with
+// the same options as a check, and shifted by the printer's offset, so that
+// holding it against a blank check shows where this printer would put the
+// ink now. No account is needed: it is the printer being checked.
+func (b *Business) Calibrate(ctx context.Context, printer, stock string) (Sent, error) {
+	p, err := b.settings.Printer(printer)
 	if err != nil {
 		return Sent{}, err
 	}
 
-	l, err := layoutbus.Load(a.Stock)
+	l, err := layoutbus.Load(stock)
 	if err != nil {
 		return Sent{}, err
 	}
 
-	pdf, err := render.PDF(l.Calibration().Shift(a.Offset.X, a.Offset.Y))
+	pdf, err := render.PDF(l.Calibration().Shift(p.Offset.X, p.Offset.Y))
 	if err != nil {
 		return Sent{}, err
 	}
 
-	return b.send(ctx, a, l, pdf, "Calibration page")
+	return b.send(ctx, p, l, pdf, "Calibration page")
 }
 
 // Check prints a check's PDF as the register made it, the account's offset
@@ -97,17 +99,17 @@ func (b *Business) Check(ctx context.Context, key string, number int, pdf []byte
 		return Sent{}, err
 	}
 
-	return b.send(ctx, a, l, pdf, fmt.Sprintf("Check %d", number))
-}
-
-// send prints the PDF on the account's printer, with the account's options.
-func (b *Business) send(ctx context.Context, a settingsbus.Account, l layoutbus.Layout, pdf []byte, name string) (Sent, error) {
 	p, err := b.settings.Printer(a.Printer)
 	if err != nil {
 		return Sent{}, err
 	}
 
-	id, err := b.ipp.Print(ctx, ipp.Printer{URL: p.URL, Pin: p.Pin}, Job(a, l, name), pdf)
+	return b.send(ctx, p, l, pdf, fmt.Sprintf("Check %d", number))
+}
+
+// send prints the PDF on the printer, with its options for checks.
+func (b *Business) send(ctx context.Context, p settingsbus.Printer, l layoutbus.Layout, pdf []byte, name string) (Sent, error) {
+	id, err := b.ipp.Print(ctx, ipp.Printer{URL: p.URL, Pin: p.Pin}, Job(p, l, name), pdf)
 	if err != nil {
 		return Sent{}, fmt.Errorf("%s: %w", p.Name, err)
 	}

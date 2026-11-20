@@ -77,6 +77,7 @@ type fields struct {
 type formView struct {
 	Accounts []settingsbus.Account
 	Account  settingsbus.Account // the one chosen
+	Printer  settingsbus.Printer // its printer: the tray, and which way up
 	Form     fields
 	Proposal checkbus.Proposal
 	Payees   []string
@@ -356,6 +357,7 @@ func (a *App) form(w http.ResponseWriter, r *http.Request, status int, v formVie
 
 		v.Account = v.Accounts[i]
 		v.Form.Account = v.Account.Key
+		v.Printer, _ = a.cfg.Settings.Printer(v.Account.Printer)
 
 		v.Proposal, _ = a.cfg.Checks.Propose(ctx, v.Account.Key)
 		if v.Form.Number == "" && v.Proposal.Next > 0 {

@@ -14,7 +14,7 @@ The split of responsibility:
 
 | Lives here | Lives in Reconcile |
 |---|---|
-| The stock, its layout and its offsets, per account | The accounts, their names and last four |
+| The stock and its layout, per account; each printer's tray and offset | The accounts, their names and last four |
 | Rendering and printing (IPP) | The checks outstanding, and attaching an image when its check clears |
 | The local register of every check printed or voided | The API contract ([reconcile#166](https://github.com/jroedel/reconcile/issues/166)) |
 | The image, until it is sent | The image, once sent, and the payee names |
@@ -127,6 +127,10 @@ reconcile = "https://reconcile.example"   # the site's address
 [[printer]]
 name = "Office M612"
 url  = "ipps://NPI46CBDF.local:631/ipp/print"   # "file:<dir>" in development
+tray = "tray-1"                    # the printer's media-source for checks
+media_type = "stationery-preprinted"
+feed = "face up, stubs in first"   # settled with a marked sheet (05)
+offset_mm = { x = 0.0, y = 0.0 }   # from its calibration page (04)
 
 [[account]]
 key     = "checking-a"   # this computer's key for it: the register and checks/<key>/ (06)
@@ -134,12 +138,8 @@ reconcile_id = "…"       # Reconcile's id, set by Settings once signed in (08)
 name    = "Checking A"   # as Reconcile names it
 last4   = "1234"
 ceiling = "10000.00"     # above it, an amount is asked about again (04)
-stock   = "walmart-voucher-top"   # which layout
-printer = "Office M612"
-tray    = "tray-1"                # the printer's media-source for the checks
-media_type = "stationery-preprinted"
-feed    = "face up, stubs in first"   # settled with a marked sheet (05)
-offset_mm = { x = 0.0, y = 0.0 }         # from calibration (04)
+stock   = "walmart-voucher-top"   # which layout: the account's paper
+printer = "Office M612"           # the tray, the feed and the offset are its
 ```
 
 The real file holds no account or routing number, because the program needs

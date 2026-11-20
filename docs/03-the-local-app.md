@@ -127,12 +127,14 @@ void and not yet sent. Void a check from here; send what is waiting.
 
 **Settings** — what this computer prints for, and how:
 
-- the accounts this computer prints checks on, from those Reconcile offers;
-- per account: the stock, the printer, the tray, the media type, the way up,
-  and the calibration offsets, with **Print calibration page**
-  ([04](04-stock-and-layout.md), [05](05-printing.md));
 - printers: found on the network, or an address typed in; what each says it
-  supports ([05](05-printing.md));
+  supports; and how checks go through it: the tray, the media type, the way
+  up and the offset, with **Print the calibration page**
+  ([04](04-stock-and-layout.md), [05](05-printing.md)). A printer is set up
+  and calibrated on its own, before any account, so before signing in to
+  Reconcile;
+- the accounts this computer prints checks on, from those Reconcile offers,
+  each with its stock and its printer;
 - signing in and out of Reconcile ([08](08-signing-in.md));
 - the version, and updates ([10](10-install-update-and-releases.md)).
 

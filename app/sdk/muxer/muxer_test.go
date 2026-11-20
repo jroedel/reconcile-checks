@@ -197,7 +197,7 @@ func TestTheGates(t *testing.T) {
 		{"a preview of an amount that isn't one", req{method: "GET", path: "/preview.png?amount=12.345", session: true}, http.StatusUnprocessableEntity},
 		{"adding a printer from another website", req{method: "POST", path: "/settings/printers", session: true, site: "cross-site", origin: "https://evil.example", form: f.token()}, http.StatusForbidden},
 		{"adding a printer without the session", req{method: "POST", path: "/settings/printers", site: "same-origin", origin: "http://" + host, form: f.token()}, http.StatusUnauthorized},
-		{"a calibration page from another website", req{method: "POST", path: "/settings/accounts/checking-a/calibrate", session: true, site: "cross-site", origin: "https://evil.example", form: f.token()}, http.StatusForbidden},
+		{"a calibration page from another website", req{method: "POST", path: "/settings/printer/calibrate", session: true, site: "cross-site", origin: "https://evil.example", form: f.token()}, http.StatusForbidden},
 		{"a printer that isn't there", req{method: "GET", path: "/settings/printer?name=Nowhere", session: true}, http.StatusNotFound},
 		{"an account that isn't there", req{method: "GET", path: "/settings/accounts/nowhere", session: true}, http.StatusNotFound},
 		{"a preview of a payee too long", req{method: "GET", path: "/preview.png?amount=1&payee=" + strings.Repeat("x", 300), session: true}, http.StatusUnprocessableEntity},
@@ -311,10 +311,11 @@ func find(page, name string) string {
 	return ""
 }
 
-// A printer is found, added and asked what it offers; an account is set up on
-// it; and its calibration page reaches the printer with the account's options
-// -- all through the pages, as a person would.
-func TestSettingUpAnAccountAndPrintingTheCalibrationPage(t *testing.T) {
+// A printer is found, added and asked what it offers; how checks go through it
+// is set and its calibration page reaches it with those options, before any
+// account exists; then an account is set up on it -- all through the pages,
+// as a person would.
+func TestSettingUpAPrinterCalibratingItAndAddingAnAccount(t *testing.T) {
 	f := setup(t)
 
 	post := func(path string, form url.Values) *httptest.ResponseRecorder {
@@ -348,21 +349,47 @@ func TestSettingUpAnAccountAndPrintingTheCalibrationPage(t *testing.T) {
 		t.Fatalf("adding the printer: %d\n%s", w.Code, w.Body)
 	}
 
-	if page := get(w.Header().Get("Location")); !strings.Contains(page, "HP LaserJet M612") || !strings.Contains(page, "tray-1") {
-		t.Errorf("the printer's page doesn't show what it offers:\n%s", page)
+	if page := get(w.Header().Get("Location")); !strings.Contains(page, "HP LaserJet M612") || !strings.Contains(page, `<option value="tray-1">`) {
+		t.Errorf("the printer's page doesn't offer its own trays:\n%s", page)
 	}
 
-	if page := get("/settings/accounts/new"); !strings.Contains(page, `<option value="tray-1">`) {
-		t.Errorf("the account form doesn't offer the printer's trays:\n%s", page)
+	checks := url.Values{
+		"name": {"Office M612"}, "tray": {"tray-1"}, "media_type": {"stationery-preprinted"},
+		"feed": {"face down, top edge in first"}, "offset_x": {"0.5"}, "offset_y": {"-1"},
+	}
+
+	far := url.Values{}
+	for k, v := range checks {
+		far[k] = v
+	}
+	far["offset_y"] = []string{"12"}
+
+	if w := post("/settings/printer/checks", far); w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "at most 10 mm") {
+		t.Errorf("an offset of 12 mm was not refused: %d", w.Code)
+	}
+
+	if w := post("/settings/printer/checks", checks); w.Code != http.StatusSeeOther {
+		t.Fatalf("saving how checks go through the printer: %d\n%s", w.Code, w.Body)
+	}
+
+	// Before any account: the printer is checked on its own.
+	if w := post("/settings/printer/calibrate", url.Values{"name": {"Office M612"}, "stock": {"walmart-voucher-top"}}); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "job 1") {
+		t.Fatalf("the calibration page: %d\n%s", w.Code, w.Body)
+	}
+
+	printed := f.printer.Printed()
+	if len(printed) != 1 {
+		t.Fatalf("%d pages reached the printer", len(printed))
+	}
+
+	if got := printed[0].Job["media-col/media-source"]; len(got) != 1 || got[0] != "tray-1" {
+		t.Errorf("printed from %q", got)
 	}
 
 	// An invented account (CLAUDE.md, "This repository is public").
 	account := url.Values{
 		"key": {"checking-a"}, "name": {"Checking A"}, "last4": {"1234"},
-		"stock": {"walmart-voucher-top"}, "printer": {"Office M612"},
-		"tray": {"tray-1"}, "media_type": {"stationery-preprinted"},
-		"feed": {"face down, top edge in first"}, "ceiling": {"5,000"},
-		"offset_x": {"0.5"}, "offset_y": {"-1"},
+		"stock": {"walmart-voucher-top"}, "printer": {"Office M612"}, "ceiling": {"5,000"},
 	}
 
 	bad := url.Values{}
@@ -379,17 +406,8 @@ func TestSettingUpAnAccountAndPrintingTheCalibrationPage(t *testing.T) {
 		t.Fatalf("adding the account: %d\n%s", w.Code, w.Body)
 	}
 
-	if w := post("/settings/accounts/checking-a/calibrate", url.Values{}); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "job 1") {
-		t.Fatalf("the calibration page: %d\n%s", w.Code, w.Body)
-	}
-
-	printed := f.printer.Printed()
-	if len(printed) != 1 {
-		t.Fatalf("%d pages reached the printer", len(printed))
-	}
-
-	if got := printed[0].Job["media-col/media-source"]; len(got) != 1 || got[0] != "tray-1" {
-		t.Errorf("printed from %q", got)
+	if acct, err := f.settings.CheckAccount("checking-a"); err != nil || acct.OffsetX != 0.5 || acct.OffsetY != -1 {
+		t.Errorf("the account prints with %+v (%v), not its printer's offset", acct, err)
 	}
 
 	if page := get("/settings/job?printer=Office+M612&job=1"); !strings.Contains(page, "completed") {
@@ -427,13 +445,14 @@ func (f *fixture) get(t *testing.T, path string) string {
 func (f *fixture) account(t *testing.T) {
 	t.Helper()
 
-	if err := f.settings.SavePrinter("", settingsbus.Printer{Name: "Office", URL: f.printer.URL}); err != nil {
+	if err := f.settings.SavePrinter("", settingsbus.Printer{
+		Name: "Office", URL: f.printer.URL, Tray: "tray-1", MediaType: "stationery-preprinted", Feed: "face down",
+	}); err != nil {
 		t.Fatal(err)
 	}
 
 	if err := f.settings.SaveAccount(settingsbus.Account{
-		Key: "checking-a", Name: "Checking A", Last4: "1234", Stock: "walmart-voucher-top",
-		Printer: "Office", Tray: "tray-1", MediaType: "stationery-preprinted", Feed: "face down",
+		Key: "checking-a", Name: "Checking A", Last4: "1234", Stock: "walmart-voucher-top", Printer: "Office",
 	}, true); err != nil {
 		t.Fatal(err)
 	}

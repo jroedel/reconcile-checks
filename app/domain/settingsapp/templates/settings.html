@@ -8,17 +8,17 @@
 <h2>Accounts</h2>
 {{if .Settings.Accounts}}
 <dl class="facts">
-{{range .Settings.Accounts}}<dt><a href="/settings/accounts/{{.Key}}">{{.Name}}</a></dt><dd>ending {{.Last4}}, on {{.Printer}}, {{.Tray}}</dd>
+{{range .Settings.Accounts}}<dt><a href="/settings/accounts/{{.Key}}">{{.Name}}</a></dt><dd>ending {{.Last4}}, on {{.Printer}}</dd>
 {{end}}</dl>
 {{else}}
-<p>No accounts yet. Add the account whose checks this computer prints; you'll need a printer first.</p>
+<p>No accounts yet. Add the account whose checks this computer prints; you'll need a printer first, and its calibration page can be printed before any account exists.</p>
 {{end}}
 {{if .Settings.Printers}}<p><a class="button quiet" href="/settings/accounts/new">Add an account</a></p>{{end}}
 
 <h2>Printers</h2>
 {{if .Settings.Printers}}
 <dl class="facts">
-{{range .Settings.Printers}}<dt><a href="/settings/printer?name={{.Name}}">{{.Name}}</a></dt><dd>{{.URL}}</dd>
+{{range .Settings.Printers}}<dt><a href="/settings/printer?name={{.Name}}">{{.Name}}</a></dt><dd>{{.URL}}; checks in {{.Tray}}, {{.Feed}}</dd>
 {{end}}</dl>
 {{else}}
 <p>No printers yet.</p>

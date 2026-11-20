@@ -50,7 +50,7 @@ every time:
 | Option (IPP attribute) | Value | Why |
 |---|---|---|
 | `sides` | `one-sided` | Duplex is the default above. A duplex pass through check stock prints the second page on the back of a check, or jams |
-| `media-col` → `media-source` | the account's tray | The checks live in their own tray; plain paper must never be drawn instead, nor checks drawn for a letter |
+| `media-col` → `media-source` | the printer's tray for checks | The checks live in their own tray; plain paper must never be drawn instead, nor checks drawn for a letter |
 | `media-col` → `media-type` | the account's media type (`stationery-preprinted` on the M612) | Tells the printer this is pre-printed stock |
 | `media-col` → `media-size` | Letter | So the printer neither scales nor refuses the page |
 | `print-scaling` | `none` | Any fit-to-page moves every box by a few millimetres |
@@ -89,8 +89,8 @@ loaded. Settled once, when the tray is set up.
 **Settings → Printers** lists what is found on the network by DNS-SD (the
 `_ipp._tcp` and `_ipps._tcp` services that printers announce), and accepts
 an address typed in. For each printer it shows what the printer reports
-about itself, and an account then chooses its printer, tray and media type
-from those lists.
+about itself, and its page chooses the tray and media type for checks from
+those lists. An account then chooses its printer.
 
 **Kept by name, not number.** The M612 is at `192.168.2.92` today, an
 address the router may change. Its announced name (`NPI46CBDF.local`) follows
@@ -128,7 +128,7 @@ them in the clear when the printer can encrypt.
 ## Which way up
 
 Settled once per printer and tray with a plain sheet marked "top, this side
-up", and written down twice: in the account's `feed`, which the page shows
+up", and written down twice: in the printer's `feed`, which the page shows
 beside the Print button ("Tray 1: face up, stubs in first"), and here.
 
 | Printer | Tray | Feed |
@@ -141,8 +141,9 @@ every check does. A printer's handling of letterhead and preprinted paper is
 a setting on its panel on some printers; if anything about tray 1 is
 changed there, mark a plain sheet and test again before the next check.
 
-It is also the program's default: a new account's form starts with it, and
-an account saved without a feed is given it (`settingsbus.DefaultFeed`).
+It is also the program's default: a printer saved without a feed is given
+it (`settingsbus.DefaultFeed`), as it is given `tray-1` and
+`stationery-preprinted`.
 
 ## Did it print?
 

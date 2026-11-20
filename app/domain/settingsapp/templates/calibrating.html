@@ -2,17 +2,17 @@
 {{define "content"}}
 {{with .Data}}
 <h1>Calibration page sent</h1>
-<p class="notice ok" role="status">{{.Sent.Printer}} took it as job {{.Sent.Job}}. <a href="/settings/job?printer={{.Sent.Printer}}&amp;job={{.Sent.Job}}&amp;back=/settings/accounts/{{.Account.Key}}">How is it going?</a></p>
+<p class="notice ok" role="status">{{.Sent.Printer}} took it as job {{.Sent.Job}}. <a href="/settings/job?printer={{.Sent.Printer}}&amp;job={{.Sent.Job}}&amp;back={{.Back}}">How is it going?</a></p>
 
 <h2>Reading it</h2>
 <ol>
 <li>Hold the calibration page against a blank check, edges together, up to a window or a lamp.</li>
 <li>Look at the boxes for the date, the payee, the amount and the memo. Each should sit on the check's own line, inside its space.</li>
 <li>If they all sit a little to one side, measure how far with the rulers along the edges. If the page's boxes are to the <em>right</em> of the check's, the offset to the right gets <em>smaller</em> by that much; if they are <em>below</em>, the offset down gets smaller.</li>
-<li>Save the new offset, print the page again, and look again, until it lines up.</li>
-<li>Then put the checks back in {{.Account.Tray}}, {{if .Account.Feed}}{{.Account.Feed}}{{else}}the way up you settled{{end}}.</li>
+<li>Save the new offset on the printer's page, print the page again, and look again, until it lines up.</li>
+<li>Then put the checks back in {{.Printer.Tray}}, {{.Printer.Feed}}.</li>
 </ol>
-<p>The offset now: {{.Account.Offset.X}} mm to the right, {{.Account.Offset.Y}} mm down.</p>
-<p><a class="button" href="/settings/accounts/{{.Account.Key}}">Back to {{.Account.Name}}</a></p>
+<p>The offset now: {{.Printer.Offset.X}} mm to the right, {{.Printer.Offset.Y}} mm down.</p>
+<p><a class="button" href="{{.Back}}">Back to {{.Printer.Name}}</a></p>
 {{end}}
 {{end}}

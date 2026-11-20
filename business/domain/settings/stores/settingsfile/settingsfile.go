@@ -38,9 +38,13 @@ type (
 	}
 
 	printer struct {
-		Name string `toml:"name"`
-		URL  string `toml:"url"`
-		Pin  string `toml:"pin,omitempty"`
+		Name      string `toml:"name"`
+		URL       string `toml:"url"`
+		Pin       string `toml:"pin,omitempty"`
+		Tray      string `toml:"tray,omitempty"`
+		MediaType string `toml:"media_type,omitempty"`
+		Feed      string `toml:"feed,omitempty"`
+		Offset    offset `toml:"offset_mm"`
 	}
 
 	account struct {
@@ -49,12 +53,8 @@ type (
 		Last4       string `toml:"last4"`
 		Stock       string `toml:"stock"`
 		Printer     string `toml:"printer"`
-		Tray        string `toml:"tray"`
-		MediaType   string `toml:"media_type"`
-		Feed        string `toml:"feed,omitempty"`
 		Ceiling     string `toml:"ceiling,omitempty"`
 		ReconcileID string `toml:"reconcile_id,omitempty"`
-		Offset      offset `toml:"offset_mm"`
 	}
 
 	offset struct {
@@ -79,7 +79,11 @@ func (f *File) Load() (settingsbus.Settings, error) {
 	var s settingsbus.Settings
 
 	for _, p := range t.Printer {
-		s.Printers = append(s.Printers, settingsbus.Printer{Name: p.Name, URL: p.URL, Pin: p.Pin})
+		s.Printers = append(s.Printers, settingsbus.Printer{
+			Name: p.Name, URL: p.URL, Pin: p.Pin,
+			Tray: p.Tray, MediaType: p.MediaType, Feed: p.Feed,
+			Offset: settingsbus.Offset{X: p.Offset.X, Y: p.Offset.Y},
+		})
 	}
 
 	for _, a := range t.Account {
@@ -94,9 +98,8 @@ func (f *File) Load() (settingsbus.Settings, error) {
 
 		s.Accounts = append(s.Accounts, settingsbus.Account{
 			Key: a.Key, Name: a.Name, Last4: a.Last4,
-			Stock: a.Stock, Printer: a.Printer, Tray: a.Tray, MediaType: a.MediaType, Feed: a.Feed,
+			Stock: a.Stock, Printer: a.Printer,
 			Ceiling:     ceiling,
-			Offset:      settingsbus.Offset{X: a.Offset.X, Y: a.Offset.Y},
 			ReconcileID: a.ReconcileID,
 		})
 	}
@@ -124,16 +127,19 @@ func (f *File) Save(s settingsbus.Settings) error {
 	var t tables
 
 	for _, p := range s.Printers {
-		t.Printer = append(t.Printer, printer{Name: p.Name, URL: p.URL, Pin: p.Pin})
+		t.Printer = append(t.Printer, printer{
+			Name: p.Name, URL: p.URL, Pin: p.Pin,
+			Tray: p.Tray, MediaType: p.MediaType, Feed: p.Feed,
+			Offset: offset{X: p.Offset.X, Y: p.Offset.Y},
+		})
 	}
 
 	for _, a := range s.Accounts {
 		t.Account = append(t.Account, account{
 			Key: a.Key, Name: a.Name, Last4: a.Last4,
-			Stock: a.Stock, Printer: a.Printer, Tray: a.Tray, MediaType: a.MediaType, Feed: a.Feed,
+			Stock: a.Stock, Printer: a.Printer,
 			Ceiling:     a.Ceiling.Figures(),
 			ReconcileID: a.ReconcileID,
-			Offset:      offset{X: a.Offset.X, Y: a.Offset.Y},
 		})
 	}
 

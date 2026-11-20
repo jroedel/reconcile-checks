@@ -76,7 +76,7 @@
 {{range .Answered}}<input type="hidden" name="answered" value="{{.}}">{{end}}
 <button type="submit" id="print">{{.Summary}}</button>
 {{end}}
-{{with .Account}}<p class="hint">On {{.Printer}}, {{.Tray}}{{if .Feed}}: {{.Feed}}{{end}}.</p>{{end}}
+{{with .Printer}}{{if .Name}}<p class="hint">On {{.Name}}, {{.Tray}}: {{.Feed}}.</p>{{end}}{{end}}
 </form>
 
 <figure class="preview">

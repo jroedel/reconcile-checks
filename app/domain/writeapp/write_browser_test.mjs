@@ -82,6 +82,11 @@ test("a check is written, printed and confirmed, with the script in the page", {
   await page.goto(`${server.base}/`);
   await page.waitFor(`document.getElementById("write")`);
 
+  // A refused preview the test before asked for can still be answered
+  // after that test cleared the log, and Chrome logs it then. This page is
+  // a new one, which nothing of the last can reach, so the log starts here.
+  page.errors.length = 0;
+
   await fill("number", "1043");
   await page.evaluate(`document.getElementById("date").value = ${JSON.stringify(today)}`);
   await fill("payee", "Payee A Plumbing");

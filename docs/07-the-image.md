@@ -36,7 +36,7 @@ that number is imported, if the amounts agree. If the transaction is already
 there (a check cashed before its image was sent), it is attached at once.
 
 The image is sent right after "Did it print correctly? Y". If that fails
-(offline, signed out, Reconcile down, or before reconcile#166 lands), the
+(offline, signed out, or Reconcile down), the
 image is saved and the register marks it unsent:
 
 ```

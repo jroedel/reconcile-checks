@@ -11,7 +11,9 @@ package booksbus
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"strconv"
 	"time"
@@ -35,15 +37,15 @@ type Business struct{ cfg Config }
 // New makes one.
 func New(cfg Config) *Business { return &Business{cfg: cfg} }
 
-var _ checkbus.Books = (*Business)(nil)
+var (
+	_ checkbus.Books  = (*Business)(nil)
+	_ checkbus.Sender = (*Business)(nil)
+)
 
 // ErrGone is an account linked to one of Reconcile's the key no longer
 // reaches: archived, or the person's role changed (docs/09, "A 404 is never
 // a free number").
 var ErrGone = errors.New("this account is no longer one Reconcile offers to this computer's key; see Settings")
-
-// errSignedOut is the register's sentence for no key.
-var errSignedOut = errors.New("this computer isn't signed in to Reconcile")
 
 // id is Reconcile's id for the account key.
 func (b *Business) id(key string) (string, error) {
@@ -70,8 +72,8 @@ func plain(err error) error {
 	switch {
 	case err == nil:
 		return nil
-	case errors.Is(err, signinbus.ErrSignedOut):
-		return errSignedOut
+	case errors.Is(err, signinbus.ErrSignedOut), errors.Is(err, reconcile.ErrSignedOut):
+		return checkbus.ErrSignedOut
 	case isRefusal && ref.Status == 404 && ref.Code == "":
 		return ErrGone
 	}
@@ -156,6 +158,90 @@ func (b *Business) Payees(ctx context.Context, key, q string) ([]string, error) 
 	names, err := b.cfg.SignIn.Payees(ctx, id, q)
 
 	return names, plain(err)
+}
+
+// Send sends a check and its image.
+func (b *Business) Send(ctx context.Context, c checkbus.Check, image []byte) (checkbus.Receipt, error) {
+	id, err := b.id(c.Account)
+	if err != nil {
+		return checkbus.Receipt{}, err
+	}
+
+	sent, err := b.cfg.SignIn.Send(ctx, id, reconcile.Outgoing{
+		Number:    c.Number,
+		Amount:    figures(c.Amount),
+		Payee:     c.Payee,
+		WrittenOn: c.WrittenOn.Format(time.DateOnly),
+		Memo:      c.Memo,
+		Name:      "check-" + strconv.Itoa(c.Number) + ".png",
+	}, image)
+	if err != nil {
+		return checkbus.Receipt{}, refused(err)
+	}
+
+	return checkbus.Receipt{Outcome: sent.Outcome, ID: sent.Check.ID, URL: sent.Check.URL}, nil
+}
+
+// Void voids the account's check with the number.
+func (b *Business) Void(ctx context.Context, key string, number int) error {
+	id, err := b.id(key)
+	if err != nil {
+		return err
+	}
+
+	err = b.cfg.SignIn.Void(ctx, id, number)
+	if ref, ok := errors.AsType[reconcile.Refusal](err); ok && ref.Code == "no_check" {
+		return checkbus.ErrNoCheck
+	}
+
+	return refused(err)
+}
+
+// refused is a refusal of a send or a void as the register keeps it: what
+// only the person can answer is checkbus.Refused, with Reconcile's sentence
+// and what it has instead; Reconcile out of reach stays as it is, to be
+// tried again.
+func refused(err error) error {
+	err = plain(err)
+
+	if errors.Is(err, ErrGone) {
+		return checkbus.Refused{Sentence: "Reconcile no longer offers this check's account to this computer's key: it was archived, or your role on it changed. See Settings."}
+	}
+
+	ref, ok := errors.AsType[reconcile.Refusal](err)
+	if !ok {
+		return err
+	}
+
+	r := checkbus.Refused{Sentence: ref.Error()}
+
+	switch ref.Code {
+	case "number_used":
+		var body struct {
+			Check reconcile.Check `json:"check"`
+		}
+
+		if json.Unmarshal(ref.Body, &body) == nil && body.Check.Number != "" {
+			c := body.Check
+			r.Conflict = fmt.Sprintf("Reconcile's check %s: to %s for %s, written %s.", c.Number, c.Payee, amount(c.Amount), date(c.WrittenOn).Format("January 2, 2006"))
+		}
+	case "amount_differs":
+		var body struct {
+			Bank reconcile.Amount `json:"bank"`
+			Sent reconcile.Amount `json:"sent"`
+		}
+
+		if json.Unmarshal(ref.Body, &body) == nil {
+			r.Conflict = fmt.Sprintf("The bank paid %s; this check says %s.", amount(body.Bank), amount(body.Sent))
+		}
+	}
+
+	return r
+}
+
+// figures is an amount as Reconcile takes it: 1234.50, no sign, no commas.
+func figures(c money.Cents) string {
+	return fmt.Sprintf("%d.%02d", c.Dollars(), c.CentsPart())
 }
 
 func number(s string) int {

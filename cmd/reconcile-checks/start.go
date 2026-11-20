@@ -171,13 +171,19 @@ func start(opt options, stdout, stderr io.Writer) (*relaunch, error) {
 	// Reconcile: signing in, and what the register asks of it by this
 	// computer's account keys.
 	signedIn := signIn(cfg, log)
+	books := booksbus.New(booksbus.Config{SignIn: signedIn, Settings: settings})
 
 	checks := checkbus.New(checkbus.Config{
 		Store:    checkdb.NewStore(db),
 		Files:    checkfiles.New(filepath.Join(cfg.Data, "checks")),
 		Accounts: settings.ForChecks(),
-		Books:    booksbus.New(booksbus.Config{SignIn: signedIn, Settings: settings}),
+		Books:    books,
+		Sender:   books,
 	})
+
+	// What is waiting goes to Reconcile now, then every minute, and at
+	// once after a void (docs/07, "Sending it").
+	go checks.Run(ctx, log.Info)
 
 	// restartInto is the version to start once this copy has let go of the
 	// lock and the port: set when an update was installed, by the check at

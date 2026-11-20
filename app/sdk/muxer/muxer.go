@@ -170,6 +170,7 @@ func New(cfg Config) (http.Handler, error) {
 	app.HandleFunc("GET /checks/{account}/{number}/image.png", checks.Image)
 	app.HandleFunc("POST /checks/{account}/{number}/void", checks.Void)
 	app.HandleFunc("POST /checks/{account}/{number}/renumber", checks.Renumber)
+	app.HandleFunc("POST /checks/send", checks.SendNow)
 	app.HandleFunc("GET /settings", settings.Settings)
 	app.HandleFunc("GET /settings/printers/find", settings.Find)
 	app.HandleFunc("POST /settings/printers", settings.AddPrinter)

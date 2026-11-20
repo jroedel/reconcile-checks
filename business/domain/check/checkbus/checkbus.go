@@ -23,6 +23,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -209,6 +210,22 @@ type Storer interface {
 	// Unsent is every check Reconcile doesn't have yet: printed or void and
 	// never sent, or void and the void never sent. Oldest first.
 	Unsent(ctx context.Context) ([]Check, error)
+
+	// MarkSent keeps Reconcile having taken the check, and clears any
+	// refusal and the tries. Only a check not yet sent.
+	MarkSent(ctx context.Context, account string, number int, id, url string, at time.Time) error
+
+	// MarkVoidSent keeps Reconcile having voided it.
+	MarkVoidSent(ctx context.Context, account string, number int, at time.Time) error
+
+	// MarkFailed keeps a try that failed: how many there have been, when to
+	// try next (zero for not by itself), and Reconcile's refusal and what
+	// it has instead, if it refused.
+	MarkFailed(ctx context.Context, account string, number int, attempts int, next time.Time, refusal, conflict string) error
+
+	// Unsend forgets that a check was sent, for a void Reconcile has no
+	// check for. Never once its void is sent.
+	Unsend(ctx context.Context, account string, number int) error
 }
 
 // Files keeps each check's PDF and PNG (stores/checkfiles): the only copy of
@@ -237,7 +254,9 @@ type Config struct {
 	Now      func() time.Time // time.Now unless a test says otherwise
 
 	// Books is Reconcile (books.go); nil prints from the register alone.
-	Books Books
+	// Sender sends to it (send.go); nil keeps every check here.
+	Books  Books
+	Sender Sender
 }
 
 // Business is the register's rules.
@@ -246,7 +265,14 @@ type Business struct {
 	files    Files
 	accounts Accounts
 	books    Books
+	sender   Sender
 	now      func() time.Time
+
+	// sendMu makes sending one thing at a time: the queue at start, the
+	// minute's pass and the press of Yes never send one check twice at
+	// once. nudge asks Run to send now.
+	sendMu sync.Mutex
+	nudge  chan struct{}
 }
 
 // New makes one.
@@ -256,7 +282,10 @@ func New(cfg Config) *Business {
 		now = time.Now
 	}
 
-	return &Business{store: cfg.Store, files: cfg.Files, accounts: cfg.Accounts, books: cfg.Books, now: now}
+	return &Business{
+		store: cfg.Store, files: cfg.Files, accounts: cfg.Accounts, books: cfg.Books, sender: cfg.Sender, now: now,
+		nudge: make(chan struct{}, 1),
+	}
 }
 
 // ImageDPI is the image's resolution: enough for a person to read a check on a

@@ -16,8 +16,12 @@
 <dt>Printed</dt><dd>{{if .Check.PrintedAt.IsZero}}not confirmed{{else}}{{.Check.PrintedAt.Format "January 2, 2006 at 3:04 PM"}}{{end}}</dd>
 {{if eq .Check.State "void"}}<dt>Voided</dt><dd>{{.Check.VoidedAt.Format "January 2, 2006"}}: {{.Check.VoidReason}}</dd>{{end}}
 {{if .Check.ReprintOf}}<dt>Replaces</dt><dd><a href="/checks/{{.Check.Account}}/{{.Check.ReprintOf}}">check {{.Check.ReprintOf}}</a></dd>{{end}}
-<dt>Reconcile</dt><dd>{{.Sending}}</dd>
+<dt>Reconcile</dt><dd>{{.Sending}}{{if .Check.Send.URL}} <a href="{{.Check.Send.URL}}">Open it in Reconcile</a>{{end}}</dd>
+{{if .Check.Send.Conflict}}<dt>Reconcile has instead</dt><dd>{{.Check.Send.Conflict}}</dd>{{end}}
 </dl>
+{{if .Check.Send.Refusal}}
+<p class="hint">When the paper says another number, correct it below, and it is sent again under that one. When Reconcile's refusal is about the account or your role on it, fix that in Reconcile, then use Send now on the Checks screen.</p>
+{{end}}
 
 {{if eq .Check.State "printing"}}
 <p><a class="button" href="/checks/{{.Check.Account}}/{{.Check.Number}}/printing">Say whether it printed correctly</a></p>

@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -111,4 +113,75 @@ func (c *Client) Payees(ctx context.Context, key, account, q string) ([]string, 
 	}
 
 	return names, nil
+}
+
+// Outgoing is a check as it is sent: what was printed on it.
+type Outgoing struct {
+	Number    int
+	Amount    string // "1234.50", unsigned
+	Payee     string
+	WrittenOn string // YYYY-MM-DD
+	Memo      string
+	Name      string // the image file's name: check-1043.png
+}
+
+// The outcomes of a send Reconcile took.
+const (
+	SentOutstanding  = "outstanding"   // waiting for the statement
+	SentAttached     = "attached"      // the bank already paid it; the image is on the charge
+	SentAlreadyThere = "already_there" // the same check, sent before: a retry
+)
+
+// Sent is a send Reconcile took.
+type Sent struct {
+	Outcome string `json:"outcome"`
+	Check   Check  `json:"check"`
+}
+
+// Send sends a check and its image (docs/09, "What the program does with
+// each answer to a send"). A refusal is a Refusal, whose Code and Body say
+// which and what Reconcile has instead.
+func (c *Client) Send(ctx context.Context, key, account string, out Outgoing, image []byte) (Sent, error) {
+	q := url.Values{
+		"number":     {strconv.Itoa(out.Number)},
+		"amount":     {out.Amount},
+		"payee":      {out.Payee},
+		"written_on": {out.WrittenOn},
+		"name":       {out.Name},
+	}
+
+	if out.Memo != "" {
+		q.Set("memo", out.Memo)
+	}
+
+	r, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		fmt.Sprintf("%s/api/v1/accounts/%s/checks?%s", c.base, url.PathEscape(account), q.Encode()), bytes.NewReader(image))
+	if err != nil {
+		return Sent{}, err
+	}
+
+	r.Header.Set("Content-Type", "image/png")
+
+	var s Sent
+	err = c.do(r, key, &s)
+
+	return s, err
+}
+
+// Void voids the account's check with the number. Voiding one already void
+// answers it as it is, so a retry is safe.
+func (c *Client) Void(ctx context.Context, key, account string, number int) (Check, error) {
+	r, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		fmt.Sprintf("%s/api/v1/accounts/%s/checks/%d/void", c.base, url.PathEscape(account), number), nil)
+	if err != nil {
+		return Check{}, err
+	}
+
+	var out struct {
+		Check Check `json:"check"`
+	}
+
+	err = c.do(r, key, &out)
+
+	return out.Check, err
 }

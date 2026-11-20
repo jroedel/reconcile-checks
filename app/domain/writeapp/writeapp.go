@@ -101,7 +101,7 @@ func (a *App) Write(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case q.Get("printed") != "":
-		v.Notice = fmt.Sprintf("Check %s printed. Its image will go to Reconcile when it can be reached.", q.Get("printed"))
+		v.Notice = a.printed(r, q.Get("account"), q.Get("printed"), q.Get("sent"))
 
 	case q.Get("reprint") != "":
 		n, _ := strconv.Atoi(q.Get("reprint"))
@@ -269,7 +269,51 @@ func (a *App) Printed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, fmt.Sprintf("/?account=%s&printed=%d", url.QueryEscape(account), number), http.StatusSeeOther)
+	// Sent at once, so the other computer sees the number within seconds
+	// (docs/06, "Two computers, one stack"). What can't go now is kept,
+	// and sent later by the register's own pass.
+	ctx, cancel := context.WithTimeout(r.Context(), sendWithin)
+	defer cancel()
+
+	sent := a.cfg.Checks.SendOne(ctx, account, number)
+
+	http.Redirect(w, r, fmt.Sprintf("/?account=%s&printed=%d&sent=%s", url.QueryEscape(account), number, sent.Code()), http.StatusSeeOther)
+}
+
+// sendWithin is how long the press of Yes waits for Reconcile before it
+// leaves the check to be sent later.
+const sendWithin = 20 * time.Second
+
+// printed is the notice after Yes: printed, and what became of sending it.
+func (a *App) printed(r *http.Request, account, number, sent string) string {
+	name := account
+	if acct, err := a.cfg.Settings.Account(account); err == nil {
+		name = acct.Name
+	}
+
+	n := "Check " + number
+
+	switch sent {
+	case checkbus.SentOutstanding:
+		return n + " printed and sent: it is in Reconcile on " + name + ", outstanding until the statement brings it."
+	case checkbus.SentAttached:
+		return n + " printed and sent: the bank had already paid it, and its image is on the charge in Reconcile."
+	case checkbus.SentUnlinked:
+		return n + " printed. " + name + " isn't linked to an account in Reconcile, so the check is kept here; link it in Settings to send it."
+	case checkbus.SentSignedOut:
+		return n + " printed. Saved; not sent to Reconcile, because this computer isn't signed in. It will be sent once you sign in, in Settings."
+	case checkbus.SentRefused:
+		why := "see it on the Checks screen."
+		if num, err := strconv.Atoi(number); err == nil {
+			if c, err := a.cfg.Checks.Get(r.Context(), account, num); err == nil && c.Send.Refusal != "" {
+				why = c.Send.Refusal + " See it on the Checks screen."
+			}
+		}
+
+		return n + " printed, but Reconcile refused it: " + why
+	}
+
+	return n + " printed. Saved; not sent to Reconcile, which can't be reached just now. It will be sent when it can be."
 }
 
 // Reprint is "No, void it and reprint": the check is voided with the reason
@@ -289,6 +333,10 @@ func (a *App) Reprint(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, r, err)
 		return
 	}
+
+	// Sent, then voided, by the register's own pass: the reprint needn't
+	// wait for Reconcile.
+	a.cfg.Checks.Nudge()
 
 	http.Redirect(w, r, fmt.Sprintf("/?account=%s&reprint=%d", url.QueryEscape(account), number), http.StatusSeeOther)
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/jroedel/reconcile-checks/business/domain/signin/signinbus"
 	"github.com/jroedel/reconcile-checks/business/sdk/reconcile"
 	"github.com/jroedel/reconcile-checks/business/sdk/reconcile/reconciletest"
+	"github.com/jroedel/reconcile-checks/business/types/money"
 	"github.com/jroedel/reconcile-checks/foundation/secretstore"
 )
 
@@ -149,4 +150,103 @@ func TestReconcileByThisComputersAccounts(t *testing.T) {
 	if _, err := f.books.Number(t.Context(), "checking-a", 1046); !errors.Is(err, booksbus.ErrGone) {
 		t.Errorf("the account gone: %v", err)
 	}
+}
+
+// A PNG's first bytes, which is all the fake looks at.
+var png = []byte("\x89PNG\r\n\x1a\nnot really a picture")
+
+func outgoing(n int, amount money.Cents, payee string) checkbus.Check {
+	return checkbus.Check{
+		Account: "checking-a", Number: n, Amount: amount, Payee: payee, Memo: "Kitchen drain repair",
+		WrittenOn: time.Date(2026, 11, 20, 0, 0, 0, 0, time.Local),
+	}
+}
+
+func TestEachAnswerToASendIsWhatTheRegisterKeeps(t *testing.T) {
+	f := setup(t)
+
+	if _, err := f.books.Send(t.Context(), outgoing(1043, 1234_50, "Payee A"), png); !errors.Is(err, checkbus.ErrSignedOut) {
+		t.Errorf("signed out: %v", err)
+	}
+
+	f.login(t)
+
+	r, err := f.books.Send(t.Context(), outgoing(1043, 1234_50, "Payee A"), png)
+	if err != nil || r.Outcome != checkbus.Outstanding || r.ID == "" || r.URL == "" {
+		t.Fatalf("a send: %+v, %v", r, err)
+	}
+
+	got := f.srv.Checks("acc1")["1043"]
+	if got.Amount != "1234.50" || got.Payee != "Payee A" || got.WrittenOn != "2026-11-20" || got.Memo != "Kitchen drain repair" || len(got.Image) != len(png) {
+		t.Errorf("Reconcile has %+v", got)
+	}
+
+	// The answer lost and the check sent again: already there.
+	if r, err := f.books.Send(t.Context(), outgoing(1043, 1234_50, "payee  a"), png); err != nil || r.Outcome != checkbus.AlreadyThere {
+		t.Errorf("sent again: %+v, %v", r, err)
+	}
+
+	// Another check on the number: refused, with what Reconcile has.
+	_, err = f.books.Send(t.Context(), outgoing(1043, 99_00, "Payee B"), png)
+	if ref, ok := errors.AsType[checkbus.Refused](err); !ok || ref.Conflict != "Reconcile's check 1043: to Payee A for $1,234.50, written November 20, 2026." {
+		t.Errorf("number used: %#v", err)
+	}
+
+	// The bank paid the number for another amount.
+	f.srv.Pay("acc1", "1044", "75.00", "2026-11-03")
+
+	_, err = f.books.Send(t.Context(), outgoing(1044, 57_00, "Payee A"), png)
+	if ref, ok := errors.AsType[checkbus.Refused](err); !ok || ref.Conflict != "The bank paid $75.00; this check says $57.00." {
+		t.Errorf("amount differs: %#v", err)
+	}
+
+	// For the same amount: attached at once.
+	if r, err := f.books.Send(t.Context(), outgoing(1044, 75_00, "Payee A"), png); err != nil || r.Outcome != checkbus.Attached {
+		t.Errorf("paid already: %+v, %v", r, err)
+	}
+
+	// A role that may not add checks.
+	f.srv.RefuseNextSend(403, "", "", "The person's role on this account does not let them add checks.")
+
+	if _, err := f.books.Send(t.Context(), outgoing(1045, 10_00, "Payee A"), png); !isRefused(err, "role on this account") {
+		t.Errorf("403: %#v", err)
+	}
+
+	// Reconcile down: not a refusal, so tried again.
+	f.srv.Down(true)
+
+	if _, err := f.books.Send(t.Context(), outgoing(1045, 10_00, "Payee A"), png); err == nil || isRefused(err, "") {
+		t.Errorf("down: %#v", err)
+	}
+
+	f.srv.Down(false)
+
+	// Voids.
+	if err := f.books.Void(t.Context(), "checking-a", 1043); err != nil || f.srv.Checks("acc1")["1043"].State != "void" {
+		t.Errorf("a void: %v", err)
+	}
+
+	if err := f.books.Void(t.Context(), "checking-a", 1043); err != nil {
+		t.Errorf("a void again: %v", err)
+	}
+
+	if err := f.books.Void(t.Context(), "checking-a", 1999); !errors.Is(err, checkbus.ErrNoCheck) {
+		t.Errorf("a void of a number Reconcile has no check for: %v", err)
+	}
+
+	if err := f.books.Void(t.Context(), "checking-a", 1044); !isRefused(err, "has cleared") {
+		t.Errorf("a void of a check that cleared: %#v", err)
+	}
+
+	// The account gone from the key: refused, for the person.
+	f.srv.SetAccounts()
+
+	if _, err := f.books.Send(t.Context(), outgoing(1046, 10_00, "Payee A"), png); !isRefused(err, "no longer offers") {
+		t.Errorf("gone: %#v", err)
+	}
+}
+
+func isRefused(err error, says string) bool {
+	ref, ok := errors.AsType[checkbus.Refused](err)
+	return ok && strings.Contains(ref.Sentence, says)
 }

@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(lp *)",
+      "Bash(lpr *)",
+      "Bash(lpadmin *)",
+      "Bash(lpoptions *-o*)",
+      "Bash(cancel *)",
+      "Bash(ipptool *print-job*)",
+      "Bash(ipptool *print-uri*)",
+      "Bash(ipptool *-f *)",
+      "Bash(gh secret *)",
+      "Bash(gh variable *)",
+      "Bash(gh pr merge*)",
+      "Bash(gh workflow run*)",
+      "Bash(git tag*)",
+      "Bash(git push * v*.*.*)",
+      "Bash(git push * refs/tags/*)",
+      "Bash(git push --tags*)",
+      "Bash(git push * --tags*)",
+      "Bash(make tag-*)",
+      "Bash(scripts/tag*)",
+      "Bash(./scripts/tag*)",
+      "Bash(gh release *)",
+      "Bash(git push origin main*)",
+      "Bash(git push * main)",
+      "Bash(git push * HEAD:main*)",
+      "Read(~/.config/reconcile-checks/**)",
+      "Edit(~/.config/reconcile-checks/**)",
+      "Read(~/.local/share/reconcile-checks/**)",
+      "Edit(~/.local/share/reconcile-checks/**)",
+      "Read(~/AppData/Roaming/reconcile-checks/**)",
+      "Read(~/AppData/Local/reconcile-checks/**)",
+      "Read(./secrets.env)",
+      "Read(./config.toml)"
+    ]
+  }
+}

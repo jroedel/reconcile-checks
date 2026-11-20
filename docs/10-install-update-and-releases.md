@@ -265,13 +265,29 @@ the Linux half of the self-update tests.
 6. Check that it **closes** when no page has been connected for the grace
    period ([03](03-the-local-app.md)).
 
-**Self-update, in Docker on every pull request** (sion-backup's
-`scripts/selfupdate-e2e`): the real release binary against a fake
-`api.github.com` (a Docker network alias and a test certificate authority
-trusted in the container). Cases: bad hash, bad or missing signature,
-truncated, corrupt, no sums, no asset, draft, pre-release, 403, a hung
-connection, a binary that reports the wrong version, a downgrade, a dev
-build, an unwritable folder, and a broken build that must roll back.
+**Self-update, in Docker on every pull request** (`make selfupdate-e2e`,
+`scripts/selfupdate-e2e`, ported from sion-backup's): real binaries built
+from the commit with a throwaway key made for the run, against a fake
+`api.github.com` and `github.com` (Docker network aliases and a test
+certificate authority trusted in the container), on an internal network
+with no way out to the real GitHub. Cases:
+
+- `reconcile-checks update`: a good release installs, with the previous
+  version kept as `.old` and the new one on probation; a bad hash, no
+  `SHA256SUMS`, no signature, a signature over other bytes, a signature by
+  another key, a truncated, corrupt or hung-up download, no asset, a draft,
+  a pre-release, a 403, and a binary that reports another version are each
+  refused with nothing changed; a build with no key refuses to update; the
+  same version, a downgrade and a dev build have nothing to do; an
+  unwritable folder says so.
+- **The program running**, as a person uses it: it checks at start,
+  installs, lets go of the lock and the port, starts the new version and
+  watches it answer `/healthz`; the new one passes probation and the old
+  one leaves. And when the new version never answers, the old one stops
+  it, puts itself back, refuses that version and starts again.
+- **Probation**: a version that installs and then fails at every start is
+  given up at the fourth, which starts the previous version, and `update`
+  won't install it again.
 
 **Self-update on Windows**, by the same fake through a `hosts` entry and the
 test authority imported into the runner's certificate store. sion-backup
@@ -316,11 +332,14 @@ with no key refuses to update at all (`foundation/selfupdate`).
 Found while building `foundation/selfupdate`; each has a provisional answer
 in the code, to be confirmed or changed when it is wired in.
 
-1. **How the public key gets into the program**: a committed file embedded
-   with `//go:embed`, or set with `-ldflags` at build time? Either way the
-   tests use a key of their own, and a release gate checks the published
-   binary carries the real one. Its encoding (base64 of the 32 raw bytes
-   is the obvious one) is decided with it.
+1. **How the public key gets into the program**: answered provisionally
+   when it was wired in. Stamped with `-ldflags -X main.releaseKey=`, as the
+   standard base64 of its 32 bytes, which the Makefile reads from
+   `release-key.pub` at the repository's root (a person commits it with the
+   key). Stamped rather than embedded so that the self-update test builds the
+   program unchanged with its own key. `reconcile-checks version` ends with
+   `key:` and the first 16 hex digits of the key's SHA-256 (`key:none`
+   without one), for the release gate to compare with `release-key.pub`'s.
 2. **What "fails three times in a row" counts.** The code counts starts: a
    start on probation that never calls `Passed` has failed, and the fourth
    rolls back. With no service manager, a failed start is a person opening
@@ -329,7 +348,8 @@ in the code, to be confirmed or changed when it is wired in.
    the first.
 3. **No update while on probation.** The code waits for the next start not
    only when `.old` can't be removed, but also while the running version
-   hasn't passed. So the check at start belongs after `Passed`.
+   hasn't passed. So the check at start comes after `Passed`, which is
+   called once the program answers its own `/healthz` (as built).
 4. **The signature doesn't name the version.** `SHA256SUMS` lists files, so
    what ties a binary to its tag is the smoke test (the binary must report
    the version it was offered as). An old signed release republished under
@@ -337,9 +357,8 @@ in the code, to be confirmed or changed when it is wired in.
    version?
 5. **A draft or pre-release at `/latest`** is an error today; "nothing to
    do" would also be defensible.
-6. **Taking a version off the refused list.** `Forget` exists; no button or
-   command calls it yet (sion-backup has `update --forget`). The list keeps
-   the last 10.
+6. **Taking a version off the refused list.** `reconcile-checks update
+   --forget`, as sion-backup has; no button yet. The list keeps the last 10.
 7. **On Windows**, the staged file is `reconcile-checks.new.exe` (it is run
    for the smoke test, so `.exe` stays last), and a rename is retried on
    access denied as well as on a sharing violation.

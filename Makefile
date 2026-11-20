@@ -19,7 +19,13 @@ VERSION              ?= $(shell git describe --tags --always --dirty 2>/dev/null
 # The Windows build is a GUI program everywhere, CI included, so that what is
 # tested is what ships (docs/02-architecture.md): no console window when it is
 # opened from the Start menu.
-LDFLAGS              := -s -w -X main.version=$(VERSION)
+# The public half of the release signing key, as base64 of its 32 bytes, from
+# release-key.pub, which a person commits once the key is made (docs/10, "The
+# release signing key"). Until then builds have no key and never update. The
+# self-update test passes a key of its own.
+RELEASE_KEY          ?= $(shell cat release-key.pub 2>/dev/null)
+
+LDFLAGS              := -s -w -X main.version=$(VERSION) -X main.releaseKey=$(RELEASE_KEY)
 WINDOWS_LDFLAGS      := $(LDFLAGS) -H windowsgui
 
 .DEFAULT_GOAL := help
@@ -138,6 +144,10 @@ test-js: ## The JavaScript's unit tests, under Node's own test runner. No browse
 .PHONY: test-browser
 test-browser: ## The pages with scripts, in headless Chrome against the program on a test config
 	@scripts/js-test browser
+
+.PHONY: selfupdate-e2e
+selfupdate-e2e: ## Self-update end to end, in Docker, against a fake GitHub and a throwaway key (needs Docker)
+	GO=$(GO) scripts/selfupdate-e2e/run
 
 .PHONY: ipp-interop
 ipp-interop: ## Run the IPP client against CUPS's ippeveprinter on loopback (needs cups-ipp-utils); never a real printer

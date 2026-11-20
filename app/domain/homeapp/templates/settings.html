@@ -1,0 +1,10 @@
+{{define "title"}}Settings · Reconcile Checks{{end}}
+{{define "content"}}
+<h1>Settings</h1>
+<h2>About</h2>
+<dl class="facts">
+<dt>Version</dt><dd>{{.Version}}</dd>
+<dt>Settings file</dt><dd>{{.Data.Config}}</dd>
+<dt>Data folder</dt><dd>{{.Data.Data}}</dd>
+</dl>
+{{end}}

@@ -1,0 +1,40 @@
+{{/* The page around every screen, after Reconcile's base.html
+   (docs/12-look-and-voice.md): the wordmark, the menu behind three lines,
+   the footer. The menu is <details>, so it opens and closes with no script.
+   Quit is a form, because it is a write. */}}
+{{define "base"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>{{block "title" .}}Reconcile Checks{{end}}</title>
+<link rel="stylesheet" href="{{.Stylesheet}}">
+<link rel="icon" type="image/svg+xml" href="{{.IconSVG}}">
+<link rel="icon" type="image/png" sizes="32x32" href="{{.Icon32}}">
+{{if .Session}}<script type="module" src="{{.Script}}"></script>
+{{end}}</head>
+<body>
+<p class="notice closed" id="closed" role="status" hidden>Reconcile Checks has closed. Open it again from its shortcut.</p>
+<header class="masthead">
+<a class="wordmark" href="/">Reconcile Checks</a>
+{{if .Session}}<details class="menu">
+<summary aria-label="Menu"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></summary>
+<div class="menu-panel">
+<nav aria-label="Reconcile Checks">
+<a href="/">Home</a>
+<a href="/settings">Settings</a>
+</nav>
+<form method="post" action="/quit" class="menu-out"><input type="hidden" name="form_token" value="{{.FormToken}}"><button type="submit">Quit</button></form>
+</div>
+</details>
+{{end}}</header>
+<main>
+{{block "content" .}}{{end}}
+</main>
+<footer class="foot">
+<p>Reconcile Checks is free software. <a href="https://github.com/jroedel/reconcile-checks">Source code</a></p>
+</footer>
+</body>
+</html>
+{{end}}

@@ -1,0 +1,34 @@
+# Dependabot, for the two kinds of pin this repository holds: the Actions,
+# pinned by commit, and the Go modules. Taken from stewards.
+#
+# It opens pull requests; a person merges them, like any other
+# (docs/10-install-update-and-releases.md). There is no auto-merge here: a
+# merge is a release to both computers, and a merge made with GitHub's own
+# token would not start the release workflow anyway.
+#
+# One pull request per ecosystem per week, grouped, so that two bumps never
+# conflict on the same lines of go.mod. The Go release itself is go-version.yml.
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: Bump
+
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      go-modules:
+        patterns: ["*"]
+    commit-message:
+      prefix: Bump

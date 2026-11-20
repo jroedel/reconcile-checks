@@ -279,3 +279,68 @@ url = "ipps://printer.local/ipp/print"
 		t.Errorf("printers %+v", s.Printers)
 	}
 }
+
+func TestEachOfReconcilesAccountsIsOneAccountHere(t *testing.T) {
+	b, _ := setup(t, "")
+	if err := b.SavePrinter("", printer); err != nil {
+		t.Fatal(err)
+	}
+
+	a := account()
+	a.ReconcileID = "acc1"
+	if err := b.SaveAccount(a, true); err != nil {
+		t.Fatal(err)
+	}
+
+	other := account()
+	other.Key, other.Name, other.ReconcileID = "checking-b", "Checking B", "acc1"
+
+	if inv, ok := errors.AsType[settingsbus.Invalid](b.SaveAccount(other, true)); !ok || inv.Field != "reconcile_id" {
+		t.Errorf("a second account here for Reconcile's acc1: %v", inv)
+	}
+
+	other.ReconcileID = "acc2"
+	if err := b.SaveAccount(other, true); err != nil {
+		t.Fatal(err)
+	}
+
+	// Unlinking is saving it with none.
+	a.ReconcileID = ""
+	if err := b.SaveAccount(a, false); err != nil {
+		t.Fatal(err)
+	}
+
+	if got, _ := b.Account("checking-a"); got.ReconcileID != "" {
+		t.Errorf("still linked to %q after unlinking", got.ReconcileID)
+	}
+}
+
+func TestANewAccountIsOfferedAKeyFromItsName(t *testing.T) {
+	b, _ := setup(t, "")
+	if err := b.SavePrinter("", printer); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := b.SaveAccount(account(), true); err != nil {
+		t.Fatal(err)
+	}
+
+	for give, want := range map[string]string{
+		"Checking A":              "checking-a-2", // checking-a is taken
+		"Parish Operating (USD)":  "parish-operating-usd",
+		"  Ñandú  ":               "and",
+		"1043":                    "1043",
+		"!!!":                     "account",
+		"CON":                     "account",
+		strings.Repeat("ab ", 30): "ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab",
+	} {
+		got := b.NewKey(give)
+		if got != want {
+			t.Errorf("%q: got %q, want %q", give, got, want)
+		}
+
+		if !checkbus.ValidKey(got) {
+			t.Errorf("%q: %q isn't a key", give, got)
+		}
+	}
+}

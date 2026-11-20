@@ -15,6 +15,23 @@
 </div>
 {{end}}
 
+{{if and .SignedIn (not .Problem)}}
+<div class="field">
+<label for="reconcile_id">In Reconcile</label>
+<select id="reconcile_id" name="reconcile_id"{{if eq .Field "reconcile_id"}} aria-invalid="true" autofocus{{end}}>
+<option value="">Not linked to Reconcile</option>
+{{if .Gone}}<option value="{{.Account.ReconcileID}}" selected>The account it was linked to, which Reconcile no longer offers</option>{{end}}
+{{range .Offered}}<option value="{{.ID}}"{{if eq .ID $.Data.Account.ReconcileID}} selected{{end}}>{{.Name}}{{if .Last4}} ····{{.Last4}}{{end}}{{if .Organization}} ({{.Organization}}){{end}}</option>{{end}}
+</select>
+{{if .Gone}}<p class="notice">Reconcile no longer offers the account this one is linked to, to this computer's key: it was archived, or your role on it changed.</p>
+{{else}}<p class="hint">The account in Reconcile whose checks these are.</p>{{end}}
+</div>
+{{else}}
+{{if .Account.ReconcileID}}<input type="hidden" name="reconcile_id" value="{{.Account.ReconcileID}}">{{end}}
+{{if .Problem}}<p class="notice">{{.Problem}}</p>
+{{else if .Account.ReconcileID}}<p class="hint">Linked to an account in Reconcile. Sign in to Reconcile, in Settings, to change which.</p>{{end}}
+{{end}}
+
 <div class="field">
 <label for="name">Name</label>
 <input type="text" id="name" name="name" value="{{.Account.Name}}" required placeholder="Checking A"{{if eq .Field "name"}} aria-invalid="true" autofocus{{end}}>

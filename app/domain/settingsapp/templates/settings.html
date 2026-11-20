@@ -6,15 +6,44 @@
 {{if .Updated}}<p class="notice ok" role="status">Updated: this is {{$.Version}} now.</p>{{end}}
 {{if eq .Saved "printer"}}<p class="notice ok" role="status">The printer was removed.</p>{{end}}
 
+{{if eq .Saved "signed-in"}}<p class="notice ok" role="status">Signed in to Reconcile.</p>{{end}}
+{{if eq .Saved "signed-out"}}<p class="notice ok" role="status">Signed out of Reconcile on this computer.</p>{{end}}
+
+{{with .Reconcile}}
+<h2 id="reconcile">Reconcile</h2>
+{{if .Status.SignedIn}}
+<p>Signed in to <a href="{{.Status.Site}}">Reconcile</a> as this computer, “{{.Status.Device}}”.{{if .Expires}} Its key lasts until {{.Expires}}.{{end}}</p>
+{{if .Status.EndsSoon}}<p class="notice" role="alert">This computer's key ends on {{.Expires}}. Sign in again before then, so that checks keep reaching Reconcile.</p>
+<p><a class="button" href="/settings/reconcile/sign-in">Sign in again</a></p>{{end}}
+{{if .Problem}}<p class="notice" role="alert">{{.Problem}}</p>{{end}}
+<form method="post" action="/settings/reconcile/sign-out" class="inline">
+<input type="hidden" name="form_token" value="{{$.FormToken}}">
+<button type="submit" class="quiet">Sign out</button>
+</form>
+<p class="hint">Signing out forgets the key on this computer. To revoke it, use <a href="{{.Status.KeysPage}}">Reconcile's keys page</a>.</p>
+{{else}}
+{{if .Status.Again}}<p class="notice" role="alert">{{.Status.Again}}</p>{{if .Problem}}<p class="hint">{{.Problem}}</p>{{end}}
+{{else}}<p>Sign in to Reconcile so that each check printed here reaches it, and to choose the accounts this computer prints on from Reconcile's.</p>{{end}}
+<p><a class="button" href="/settings/reconcile/sign-in">{{if .Status.Again}}Sign in to Reconcile again{{else}}Sign in to Reconcile{{end}}</a></p>
+<p class="hint">You sign in on Reconcile's own page, with your email and the code it sends. Reconcile gives this computer a key that may only do what printing checks needs.</p>
+{{end}}
+{{end}}
+
 <h2>Accounts</h2>
 {{if .Settings.Accounts}}
 <dl class="facts">
-{{range .Settings.Accounts}}<dt><a href="/settings/accounts/{{.Key}}">{{.Name}}</a></dt><dd>ending {{.Last4}}, on {{.Printer}}</dd>
+{{range $acct := .Settings.Accounts}}<dt><a href="/settings/accounts/{{$acct.Key}}">{{$acct.Name}}</a></dt><dd>ending {{$acct.Last4}}, on {{$acct.Printer}}{{with $.Data.Reconcile}}{{if and .Status.SignedIn (not .Problem)}}{{with (index .Linked $acct.Key).Name}}; in Reconcile as {{.}}{{else}}{{if index .Gone $acct.Key}}; <strong>Reconcile no longer offers its account to this computer's key</strong>{{else}}; not linked to Reconcile{{end}}{{end}}{{end}}{{end}}</dd>
 {{end}}</dl>
 {{else}}
-<p>No accounts yet. Add the account whose checks this computer prints; you'll need a printer first, and its calibration page can be printed before any account exists.</p>
+<p>No accounts yet.{{if not .Settings.Printers}} Add a printer first: its calibration page can be printed before any account exists.{{end}}</p>
 {{end}}
-{{if .Settings.Printers}}<p><a class="button quiet" href="/settings/accounts/new">Add an account</a></p>{{end}}
+{{with .Reconcile}}{{if .Offered}}
+<h3>From Reconcile</h3>
+<dl class="facts">
+{{range .Offered}}<dt>{{.Name}}</dt><dd>{{if .Last4}}ending {{.Last4}}{{end}}{{if .Organization}}{{if .Last4}}, {{end}}{{.Organization}}{{end}}{{if $.Data.Settings.Printers}} · <a href="/settings/accounts/new?reconcile={{.ID}}">Print checks on it here</a>{{end}}</dd>
+{{end}}</dl>
+{{end}}{{end}}
+{{if .Settings.Printers}}<p><a class="button quiet" href="/settings/accounts/new">Add an account by hand</a></p>{{end}}
 
 <h2>Printers</h2>
 {{if .Settings.Printers}}

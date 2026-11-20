@@ -66,8 +66,10 @@ type Account struct {
 
 	Ceiling money.Cents // above it, an amount is asked about again
 
-	// ReconcileID is Reconcile's id for the account, once signed in
-	// (docs/08). Empty until then; checks are kept under Key either way.
+	// ReconcileID is Reconcile's id for the account, chosen in Settings
+	// from the accounts the key reaches (docs/08, "The accounts this
+	// computer prints for"). Empty for an account not linked to Reconcile;
+	// checks are kept under Key either way.
 	ReconcileID string
 }
 
@@ -322,6 +324,14 @@ func (b *Business) SaveAccount(a Account, isNew bool) error {
 
 	at := slices.IndexFunc(s.Accounts, func(x Account) bool { return x.Key == a.Key })
 
+	// One account here for each of Reconcile's: two would print from one
+	// stack of numbers as if they were two (docs/06, "Numbering").
+	if a.ReconcileID != "" {
+		if i := slices.IndexFunc(s.Accounts, func(x Account) bool { return x.ReconcileID == a.ReconcileID && x.Key != a.Key }); i >= 0 {
+			return Invalid{Field: "reconcile_id", Sentence: fmt.Sprintf("%s is already Reconcile's account on this computer.", s.Accounts[i].Name)}
+		}
+	}
+
 	switch {
 	case isNew && at >= 0:
 		return Invalid{Field: "key", Sentence: fmt.Sprintf("There is already an account called %s on this computer.", a.Key)}
@@ -330,11 +340,49 @@ func (b *Business) SaveAccount(a Account, isNew bool) error {
 	case isNew:
 		s.Accounts = append(s.Accounts, a)
 	default:
-		a.ReconcileID = s.Accounts[at].ReconcileID // set by signing in, not by this form
 		s.Accounts[at] = a
 	}
 
 	return b.store.Save(s)
+}
+
+// NewKey is a key for a new account called name, such as checking-a for
+// Checking A: what the form offers, for the person to keep or change.
+func (b *Business) NewKey(name string) string {
+	var k strings.Builder
+
+	for _, r := range strings.ToLower(name) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			k.WriteRune(r)
+		case k.Len() > 0 && !strings.HasSuffix(k.String(), "-"):
+			k.WriteByte('-')
+		}
+	}
+
+	key := strings.Trim(k.String(), "-")
+	if len(key) > 32 {
+		key = strings.TrimRight(key[:32], "-")
+	}
+
+	if !checkbus.ValidKey(key) {
+		key = "account"
+	}
+
+	s, err := b.load()
+	if err != nil {
+		return key
+	}
+
+	taken := func(k string) bool {
+		return slices.ContainsFunc(s.Accounts, func(a Account) bool { return a.Key == k })
+	}
+
+	for base, n := key, 2; taken(key); n++ {
+		key = fmt.Sprintf("%s-%d", base, n)
+	}
+
+	return key
 }
 
 func printerURL(s string) bool {

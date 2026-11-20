@@ -11,6 +11,17 @@
 #     scripts/selfupdate-e2e/run happy app-restart   # only these
 #     scripts/selfupdate-e2e/run --list              # what there is
 #
+# THE UPGRADE GATE (the release workflow, docs/10):
+#
+#     scripts/selfupdate-e2e/run --previous OLD --candidate NEW --key KEY
+#
+# installs OLD, the previous published release as it was downloaded, and
+# offers NEW, the binary about to be published, signed with KEY (the base64
+# of the release key's private half, in a file). Only the happy and the
+# app-restart cases: the previous release, unchanged, must update itself to
+# the candidate both by `update` and by itself while running. The release
+# key, not a throwaway one, because the previous release trusts nothing else.
+#
 # WHAT THIS PROVES, AND WHAT IT DOES NOT
 #
 # That the program, doing real DNS and real TLS against a release it can't
@@ -88,6 +99,31 @@ CASES=(
   "probation|none|crash|probation-rolled-back|"
 )
 
+PREVIOUS=""
+CANDIDATE=""
+KEYFILE=""
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --previous)  PREVIOUS="$2"; shift 2 ;;
+    --candidate) CANDIDATE="$2"; shift 2 ;;
+    --key)       KEYFILE="$2"; shift 2 ;;
+    *) break ;;
+  esac
+done
+
+if [ -n "$PREVIOUS$CANDIDATE$KEYFILE" ]; then
+  [ -f "$PREVIOUS" ] && [ -f "$CANDIDATE" ] && [ -f "$KEYFILE" ] || {
+    echo "run: --previous, --candidate and --key each name a file" >&2
+    exit 2
+  }
+
+  # Their own words for their versions: the second word of `version`.
+  CURRENT_VERSION=$("$PREVIOUS" version | awk '{print $2}')
+  NEXT_VERSION=$("$CANDIDATE" version | awk '{print $2}')
+  set -- happy app-restart
+fi
+
 case "${1:-}" in
   --list|-l)
     for c in "${CASES[@]}"; do printf '%s\n' "${c%%|*}"; done
@@ -149,16 +185,24 @@ build() { # out version package [more ldflags]
 }
 
 build "$WORK/ctx/releaseserver" "" ./scripts/selfupdate-e2e/releaseserver
-"$WORK/ctx/releaseserver" -keygen "$WORK/key"
 
-KEY="-X main.releaseKey=$(cat "$WORK/key/key.pub")"
+if [ -n "$PREVIOUS" ]; then
+  # The upgrade gate: the binaries as they are, and the real key.
+  cp "$PREVIOUS" "$WORK/bin/stale"
+  cp "$CANDIDATE" "$WORK/bin/next"
+  install -m 0600 "$KEYFILE" "$WORK/key/key.priv"
+else
+  "$WORK/ctx/releaseserver" -keygen "$WORK/key"
 
-build "$WORK/bin/next"  "$NEXT_VERSION"    ./cmd/reconcile-checks "$KEY"
-build "$WORK/bin/stale" "$CURRENT_VERSION" ./cmd/reconcile-checks "$KEY"
-build "$WORK/bin/nokey" "$CURRENT_VERSION" ./cmd/reconcile-checks
-build "$WORK/bin/dev"   "dev"              ./cmd/reconcile-checks "$KEY"
-build "$WORK/bin/hang"  "$NEXT_VERSION"    ./scripts/selfupdate-e2e/brokenbuild "-X main.mode=hang"
-build "$WORK/bin/crash" "$NEXT_VERSION"    ./scripts/selfupdate-e2e/brokenbuild "-X main.mode=crash"
+  KEY="-X main.releaseKey=$(cat "$WORK/key/key.pub")"
+
+  build "$WORK/bin/next"  "$NEXT_VERSION"    ./cmd/reconcile-checks "$KEY"
+  build "$WORK/bin/stale" "$CURRENT_VERSION" ./cmd/reconcile-checks "$KEY"
+  build "$WORK/bin/nokey" "$CURRENT_VERSION" ./cmd/reconcile-checks
+  build "$WORK/bin/dev"   "dev"              ./cmd/reconcile-checks "$KEY"
+  build "$WORK/bin/hang"  "$NEXT_VERSION"    ./scripts/selfupdate-e2e/brokenbuild "-X main.mode=hang"
+  build "$WORK/bin/crash" "$NEXT_VERSION"    ./scripts/selfupdate-e2e/brokenbuild "-X main.mode=crash"
+fi
 
 cp scripts/selfupdate-e2e/{Dockerfile,run-case} "$WORK/ctx/"
 

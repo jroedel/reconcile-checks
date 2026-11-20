@@ -306,24 +306,42 @@ and then one real check ([04](04-stock-and-layout.md)).
 
 ## The release signing key
 
-Made once, by a person, before the first release: an Ed25519 key pair. The
-public half is committed and compiled into the program; the private half is
-only in the GitHub Actions secret the release job reads, and in an offline
-backup (a password manager). Losing it means a release whose new key the
-old programs can't verify, so they would have to be updated by hand once.
-Agents never make, read or set it ([`CLAUDE.md`](../CLAUDE.md)).
+Made once, by a person, before the first release: an Ed25519 key pair.
+
+- **The private half lives in `secrets.env`** at the repository's root, as
+  `RELEASE_SIGNING_KEY_B64`, the custom of the sibling projects: the file is
+  gitignored, kept in the password vault, and a lost checkout plus that one
+  file is a working setup again. `secrets.env.example`, tracked, documents
+  it. From there it goes to one place, the GitHub Actions secret
+  `RELEASE_SIGNING_KEY`, which only the release job reads.
+- **The public half is `release-key.pub`**, committed, the base64 of its 32
+  bytes. The Makefile builds it into every release (`RELEASE_KEY`), and
+  `reconcile-checks version` shows its fingerprint.
+
+In order, by the person, at a terminal (`scripts/releasekey`):
+
+1. `make release-keygen`: makes the pair, writes `secrets.env` (from the
+   example, if there is none) and `release-key.pub`. It refuses if
+   `secrets.env` already holds a key.
+2. Save `secrets.env` in the vault. Commit `release-key.pub` by pull request.
+3. `make release-send-secret`: checks the two halves are one pair, then
+   `gh secret set RELEASE_SIGNING_KEY`.
+4. `make release-status`: the pair, `release-key.pub` on `main`, and the
+   secret set.
+
+Losing the private half means a release whose new key the installed copies
+can't verify, so each computer would have to be updated by hand once.
+Agents never make, read or set it: `.claude/settings.json` denies them
+`secrets.env` and these targets ([`CLAUDE.md`](../CLAUDE.md)).
 
 ## The signature, as built
 
 `SHA256SUMS.sig` is one line: the standard base64, with padding, of the raw
 64-byte Ed25519 signature over the exact bytes of `SHA256SUMS`. The release
-job can make it with OpenSSL alone:
-
-```sh
-openssl pkeyutl -sign -rawin -inkey key.pem -in SHA256SUMS | base64 -w0 > SHA256SUMS.sig
-```
-
-(tried with a throwaway key, and accepted by Go's `ed25519.Verify`). The
+job makes it with `scripts/releasekey sign`, from the secret, and checks it
+with `scripts/releasekey verify` against the committed `release-key.pub`
+before publishing, so a secret that isn't the committed key's pair stops
+the release rather than shipping one no computer will install. The
 updater checks it before reading any hash out of the file, and an updater
 with no key refuses to update at all (`foundation/selfupdate`).
 

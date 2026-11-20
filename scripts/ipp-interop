@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# The IPP client against a real IPP implementation that is not a printer:
+# CUPS's ippeveprinter (package cups-ipp-utils), which spools what it receives
+# to a folder. See foundation/ipp/interop_test.go for why the fake printer is
+# not enough on its own.
+#
+# On loopback only (-n localhost) and never announced on the network (-r off).
+# This never touches a real printer (CLAUDE.md, section 6).
+set -euo pipefail
+
+command -v ippeveprinter >/dev/null || {
+	echo "ippeveprinter is not installed (Debian and Ubuntu: apt install cups-ipp-utils)" >&2
+	exit 1
+}
+
+spool=$(mktemp -d)
+port=${IPP_INTEROP_PORT:-8631}
+
+ippeveprinter -r off -n localhost -p "$port" -d "$spool" -f application/pdf interop >"$spool.log" 2>&1 &
+printer=$!
+trap 'kill $printer 2>/dev/null || true; rm -rf "$spool" "$spool.log"' EXIT
+
+for _ in $(seq 1 50); do
+	(exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null && break
+	sleep 0.1
+done
+
+IPP_INTEROP_URL="ipp://127.0.0.1:$port/ipp/print" IPP_INTEROP_SPOOL="$spool" \
+	${GO:-go} test -count=1 -run '^TestInterop$' -v ./foundation/ipp/ || {
+	echo "--- ippeveprinter's log:" >&2
+	cat "$spool.log" >&2
+	exit 1
+}

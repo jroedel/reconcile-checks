@@ -15,11 +15,13 @@ it asks for the printer's attributes (`Get-Printer-Attributes`) and offers
 the trays, media types and sizes the printer says it has. A new printer is
 a new entry in Settings, not a new release.
 
-`foundation/ipp` is the IPP client: three operations
-(`Get-Printer-Attributes`, `Print-Job`, `Get-Job-Attributes`), knowing
-nothing about checks. Whether it is a library or our own small encoder is
-decided when the code is written; it must be pure Go
-([10](10-install-update-and-releases.md)).
+`foundation/ipp` is the IPP client: four operations
+(`Get-Printer-Attributes`, `Validate-Job`, `Print-Job`,
+`Get-Job-Attributes`), knowing nothing about checks. The wire format is
+[`github.com/OpenPrinting/goipp`](https://github.com/OpenPrinting/goipp)
+(BSD-2, pure Go, no dependencies of its own, and it encodes the `media-col`
+collection); the transport, the certificate pinning and the operations are
+ours.
 
 ## The M612, as it describes itself
 
@@ -55,10 +57,25 @@ every time:
 | `copies` | 1 | |
 | `document-format` | `application/pdf` | |
 
-**Before every print** the program checks these against what the printer
-says it supports (cached, refreshed when the printer is reached). A printer
-that doesn't offer a value an account needs is refused, with what it does
-offer, rather than printed on with its defaults.
+**Nothing is substituted.** A printer that can't honour an option may
+quietly print with one of its own instead, and say so only in a status code
+(`successful-ok-ignored-or-substituted-attributes`) after the check is already
+coming out of the tray. So every job is sent with
+`ipp-attribute-fidelity` set, which tells the printer to refuse rather than
+substitute, and before every print the program makes sure twice:
+
+1. **Against the printer's lists.** It asks the printer for its attributes,
+   afresh each time, and refuses a value the printer doesn't offer, saying
+   what it does offer.
+2. **With `Validate-Job`.** It sends the whole request, without the PDF, and
+   prints only if the printer accepts it. A refusal names the options it
+   won't honour. Every IPP printer must support `Validate-Job`.
+
+Neither check is enough on its own. A printer may honour an option it leaves
+out of a list, which only `Validate-Job` can show. And a printer may accept
+a `Validate-Job` for a value it doesn't have: CUPS's own `ippeveprinter`
+answers `successful-ok` for a tray that doesn't exist, even with fidelity set
+(found 2026-11-20, while testing the client against it).
 
 On the printer's own panel, tray 1 should be set to the paper type
 "Preprinted" (or "Any type"). An HP asked for preprinted paper from a tray
@@ -130,3 +147,15 @@ received ([10](10-install-update-and-releases.md)), never against a printer.
 Real check stock is not cheap and a misprint can't be undone, so **only a
 person prints to a real printer**. See [`CLAUDE.md`](../CLAUDE.md).
 
+## Open questions
+
+- **Will the M612 honour `print-scaling=none`?** It lists `none` in
+  `print-scaling-supported`, but leaves `print-scaling` out of
+  `job-creation-attributes-supported`. Its default, `auto`, would shrink a
+  full Letter page into its 4.23 mm margins and move every box. The program
+  sends `none` with fidelity, so the worst case is a refusal naming
+  `print-scaling`, never a scaled check. The first calibration page, printed
+  by a person on plain paper, answers it. If the M612 refuses, the choices
+  are to leave `print-scaling` out for that printer and measure whether the
+  calibration page comes out at full size, or to find the setting on the
+  printer's panel.

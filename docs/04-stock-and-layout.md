@@ -45,7 +45,7 @@ account's config.
 | Amount in words | On the dollars line, the rest of the line filled with `*` |
 | Memo | On the memo line |
 
-**On the stubs** (agreed 2026-11-20). A top check with two stubs is a
+**On the stubs** (agreed 2026-11-20; laid out in "As measured" below). A top check with two stubs is a
 *voucher* check: the first stub goes in the envelope with the check as the
 payee's record of what it paid for (the remittance advice), and the second
 stays with the payer as the file copy. Common practice prints the same on
@@ -111,6 +111,25 @@ How positions are taken:
   proof (below); a scan of the calibration page, on the same scanner, can
   check the printer's own scale the same way the perforations checked the
   scanner's.
+
+### As measured (2026-11-20)
+
+From the scan, straightened by 0.24°, the first perforation taken as 88.9 mm
+from the top of the sheet: `layouts/walmart-voucher-top.toml`, which says the
+same with every number. In millimetres from the sheet's top-left corner:
+
+| On the stock | Where | What is printed there |
+|---|---|---|
+| The date rule, top right | 26.4 down, 177–209 across | The date, on a baseline at 25.3, from 178, at most 31 wide |
+| "PAY TO THE ORDER OF" and its rule, ending in a tick | 38.5 down, 23–168 across | The payee, from 27, at most 139 wide |
+| "$", with no box | 173–176 across | The figures, from 177.5 to 210.5, padded with `*` |
+| The dollars rule, then "DOLLARS" | 47.2 down, 8–196 across | The words, from 9, filled with `*` to 195.5 |
+| "MEMO", **with no rule** | 10–18 across, 70.3 down | The memo, from 20.5 to 130.5, stopping short of the signature rule |
+| The signature rule, a fine dotted microprint line | 70.0 down, 135–208 across | Nothing |
+| Each stub's header: the holder's name, and the check number at the right | 2.2–6.4 below its perforation | Below it: date and amount, then pay to, memo, and up to six lines of the note |
+
+The date is the tightest fit: "November 20, 2026" prints at 9.5 points
+rather than 10, and a longer month falls back to `11/20/2026`.
 
 ## Amount in words
 

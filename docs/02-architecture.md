@@ -60,8 +60,8 @@ renderers then draw the same placed text:
 - **PNG**, for the preview and for Reconcile: without the offset, with the
   stock drawn in ([07](07-the-image.md)).
 
-Both use **one font file embedded in the binary**, an openly licensed one
-(the Go fonts from `golang.org/x/image` are a candidate). Both renderers
+Both use **one font file embedded in the binary**, an openly licensed one:
+Go Regular, from `golang.org/x/image`. Both renderers
 measure text with the same font, so a payee that fits in the preview fits
 on the paper. A golden test of each keeps them honest
 ([10](10-install-update-and-releases.md)). Which PDF and font libraries to
@@ -77,7 +77,7 @@ builds for every system ([10](10-install-update-and-releases.md)).
 | Go | 1.26, as the sibling projects; 1.27 before v1.0 | Matches the `writing-go` skill; 1.26 leaves support when 1.28 ships |
 | SQLite | `modernc.org/sqlite` | As every sibling |
 | PDF | Our own small writer in `foundation/render` | A check is text and lines. One TrueType font embedded as a simple font with WinAnsi encoding: deterministic bytes for golden tests, the simplest font for a printer's own PDF interpreter, and no dependency |
-| Font and PNG | Go Mono, from `golang.org/x/image` | Openly licensed; the PDF's widths and the PNG's drawing come from the same font file |
+| Font and PNG | Go Regular, from `golang.org/x/image` | Openly licensed; the PDF's widths and the PNG's drawing come from the same font file. Proportional rather than Go Mono, which was the first choice: the stock's date box is 31 mm wide, and "November 20, 2026" in a monospaced font needs 36 |
 | Config and layouts | TOML, `github.com/BurntSushi/toml` | Readable by hand. Settings rewrites the file, so comments written into it by hand don't survive; `config.example.toml` says so |
 | IPP | `github.com/OpenPrinting/goipp` to encode, our own HTTP and TLS | The encoding is the fiddly part; the transport is a POST |
 | mDNS | Our own, on `golang.org/x/net/dns/dnsmessage` | One-shot queries only ([05](05-printing.md)) |

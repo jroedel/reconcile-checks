@@ -31,12 +31,14 @@
 package muxer
 
 import (
+	"cmp"
 	"database/sql"
 	"log/slog"
 	"net/http"
 
 	"github.com/jroedel/reconcile-checks/app/domain/homeapp"
 	"github.com/jroedel/reconcile-checks/app/domain/launchapp"
+	"github.com/jroedel/reconcile-checks/app/domain/previewapp"
 	"github.com/jroedel/reconcile-checks/app/sdk/health"
 	"github.com/jroedel/reconcile-checks/app/sdk/mid"
 	"github.com/jroedel/reconcile-checks/app/sdk/page"
@@ -74,7 +76,14 @@ type Config struct {
 
 	ConfigFile string // shown in Settings
 	DataDir    string
+
+	// Stock is the layout the preview draws on, until accounts each name
+	// their own.
+	Stock string
 }
+
+// DefaultStock is the one stock this program knows today.
+const DefaultStock = "walmart-voucher-top"
 
 // New builds the handler.
 func New(cfg Config) (http.Handler, error) {
@@ -88,12 +97,18 @@ func New(cfg Config) (http.Handler, error) {
 		return nil, err
 	}
 
+	preview, err := previewapp.New(previewapp.Config{Stock: cmp.Or(cfg.Stock, DefaultStock)})
+	if err != nil {
+		return nil, err
+	}
+
 	// The routes behind the session. Every write among them is checked for
 	// where it came from.
 	app := http.NewServeMux()
 	app.HandleFunc("GET /{$}", home.Home)
 	app.HandleFunc("GET /settings", home.Settings)
 	app.HandleFunc("GET /events", cfg.Presence.Events)
+	app.HandleFunc("GET /preview.png", preview.Preview)
 	app.HandleFunc("POST /quit", launch.Quit)
 
 	// The open routes.

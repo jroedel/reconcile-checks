@@ -163,6 +163,7 @@ func New(cfg Config) (http.Handler, error) {
 	app.HandleFunc("GET /write/amount", write.Amount)
 	app.HandleFunc("GET /write/defaults", write.Defaults)
 	app.HandleFunc("GET /write/proposal", write.Proposal)
+	app.HandleFunc("GET /write/payees", write.Payees)
 
 	app.HandleFunc("GET /checks", checks.List)
 	app.HandleFunc("GET /checks/{account}/{number}", checks.Check)

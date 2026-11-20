@@ -158,6 +158,7 @@ business/domain/check/checkbus/       the rules: numbering, refusing a number tw
 business/domain/check/stores/checkdb/ the register (SQLite)
 business/domain/layout/layoutbus/     placing a check's fields on a stock's layout
 business/domain/signin/signinbus/     signed in or not: the sign-ins begun, the key kept, what it reaches
+business/domain/books/booksbus/       Reconcile by this computer's account keys: what makes it checkbus.Books
 business/sdk/reconcile/               the client for Reconcile's checks routes and its sign-in; reconciletest, a fake
 business/types/money/                 an amount in cents, the figures, and the amount in words
 foundation/ipp/                       an IPP client: printer attributes, print a PDF with options, follow the job

@@ -18,6 +18,7 @@ import (
 	"github.com/jroedel/reconcile-checks/app/sdk/muxer"
 	"github.com/jroedel/reconcile-checks/app/sdk/page"
 	"github.com/jroedel/reconcile-checks/app/sdk/presence"
+	"github.com/jroedel/reconcile-checks/business/domain/books/booksbus"
 	"github.com/jroedel/reconcile-checks/business/domain/check/checkbus"
 	"github.com/jroedel/reconcile-checks/business/domain/check/stores/checkdb"
 	"github.com/jroedel/reconcile-checks/business/domain/check/stores/checkfiles"
@@ -101,12 +102,6 @@ func setup(t *testing.T) *fixture {
 	config := filepath.Join(t.TempDir(), "config.toml")
 	settings := settingsbus.New(settingsfile.New(config))
 
-	checks := checkbus.New(checkbus.Config{
-		Store:    checkdb.NewStore(db),
-		Files:    checkfiles.New(filepath.Join(t.TempDir(), "checks")),
-		Accounts: settings.ForChecks(),
-	})
-
 	books := reconciletest.New(
 		reconciletest.Account{ID: "acc1", Name: "Checking A", Last4: "1234", Currency: "USD", Organization: "Parish A"},
 		reconciletest.Account{ID: "acc2", Name: "Checking B", Last4: "5678", Currency: "USD"},
@@ -119,6 +114,13 @@ func setup(t *testing.T) *fixture {
 	}
 
 	signIn := signinbus.New(signinbus.Config{Client: client, Store: secretstore.File(filepath.Join(t.TempDir(), "key")), Device: "Office"})
+
+	checks := checkbus.New(checkbus.Config{
+		Store:    checkdb.NewStore(db),
+		Files:    checkfiles.New(filepath.Join(t.TempDir(), "checks")),
+		Accounts: settings.ForChecks(),
+		Books:    booksbus.New(booksbus.Config{SignIn: signIn, Settings: settings}),
+	})
 
 	h, err := muxer.New(muxer.Config{
 		Log:      log,
@@ -663,7 +665,7 @@ func TestWhatTheScriptAsks(t *testing.T) {
 		t.Errorf("an amount that isn't one: %s", body)
 	}
 
-	if body := f.get(t, "/write/proposal?account=checking-a"); body != "{\"next\":0,\"last\":[]}\n" {
+	if body := f.get(t, "/write/proposal?account=checking-a"); body != "{\"next\":0,\"last\":[],\"books\":false}\n" {
 		t.Errorf("the proposal on an empty register: %s", body)
 	}
 
@@ -673,7 +675,7 @@ func TestWhatTheScriptAsks(t *testing.T) {
 		t.Fatalf("printing: %d\n%s", w.Code, w.Body)
 	}
 
-	if body := f.get(t, "/write/proposal?account=checking-a"); body != "{\"next\":1044,\"last\":[1043]}\n" {
+	if body := f.get(t, "/write/proposal?account=checking-a"); body != "{\"next\":1044,\"last\":[1043],\"books\":false}\n" {
 		t.Errorf("the proposal after 1043: %s", body)
 	}
 
@@ -877,5 +879,64 @@ func TestASignInTurnedDownSaysSo(t *testing.T) {
 	w = f.do(req{method: "GET", path: back.RequestURI(), site: "cross-site"})
 	if w.Code != http.StatusOK || w.Header().Get("Refresh") != "" || !strings.Contains(w.Body.String(), "turned down on Reconcile") {
 		t.Errorf("a sign-in turned down: %d, refresh %q\n%s", w.Code, w.Header().Get("Refresh"), w.Body)
+	}
+}
+
+// Signed in, with the account linked: the number proposed takes Reconcile's,
+// a number Reconcile has is refused before anything prints, payees complete
+// from Reconcile, and with Reconcile away the check prints once the warning
+// is answered.
+func TestTheNumberIsCheckedWithReconcileBeforePrinting(t *testing.T) {
+	f := setup(t)
+	f.account(t)
+	f.signIn(t)
+
+	a, _ := f.settings.Account("checking-a")
+	a.ReconcileID = "acc1"
+	if err := f.settings.SaveAccount(a, false); err != nil {
+		t.Fatal(err)
+	}
+
+	f.books.SetAccounts(reconciletest.Account{ID: "acc1", Name: "Checking A", Last4: "1234", Currency: "USD", Highest: "1042", LastNumbers: []string{"1042", "1041"}})
+	f.books.AddCheck("acc1", reconciletest.Check{Number: "1043", Amount: "120.00", Payee: "Payee B", WrittenOn: "2026-11-18"})
+	f.books.SetPayees("acc1", "Payee A Plumbing", "Payee B Hardware")
+
+	if page := f.get(t, "/?account=checking-a"); !strings.Contains(page, `value="1043"`) || !strings.Contains(page, "from both computers: 1042, 1041") {
+		t.Errorf("the form doesn't propose 1043 from Reconcile's 1042")
+	}
+
+	if body := f.get(t, "/write/payees?account=checking-a&q=hard"); !strings.Contains(body, `"Payee B Hardware"`) {
+		t.Errorf("completing a payee: %s", body)
+	}
+
+	form := check("1043")
+	form.Add("answered", "new-payee=payee a plumbing")
+
+	w := f.post(t, "/checks", form)
+	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "Check 1043 is already in Reconcile: to Payee B for $120.00") {
+		t.Fatalf("printing on a number Reconcile has: %d\n%s", w.Code, w.Body)
+	}
+
+	if jobs := f.printer.Printed(); len(jobs) != 0 {
+		t.Errorf("%d jobs reached the printer", len(jobs))
+	}
+
+	// Reconcile away: asked, then printed.
+	f.books.Down(true)
+
+	form = check("1044")
+	form.Add("answered", "new-payee=payee a plumbing")
+
+	w = f.post(t, "/checks", form)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "couldn&#39;t be checked against the other computer&#39;s checks") {
+		t.Fatalf("offline: %d\n%s", w.Code, w.Body)
+	}
+
+	for _, a := range answers(w.Body.String()) {
+		form.Add("answered", a)
+	}
+
+	if w := f.post(t, "/checks", form); w.Code != http.StatusSeeOther {
+		t.Fatalf("offline, answered: %d\n%s", w.Code, w.Body)
 	}
 }

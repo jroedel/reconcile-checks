@@ -44,6 +44,13 @@ type env struct {
 func setup(t *testing.T) *env {
 	t.Helper()
 
+	return setupWith(t, nil)
+}
+
+// setupWith is a register asking books as Reconcile; nil for none.
+func setupWith(t *testing.T, books checkbus.Books) *env {
+	t.Helper()
+
 	dir := t.TempDir()
 
 	db, err := sqldb.Open(filepath.Join(dir, "register.db"))
@@ -81,7 +88,8 @@ func setup(t *testing.T) *env {
 			"checking-b": {Key: "checking-b", Last4: "5678", Stock: "walmart-voucher-top", Ceiling: 500_00},
 			"offset":     {Key: "offset", Last4: "9012", Stock: "walmart-voucher-top", OffsetX: 1.5, OffsetY: -0.5},
 		},
-		Now: func() time.Time { return *e.now },
+		Now:   func() time.Time { return *e.now },
+		Books: books,
 	})
 
 	return e

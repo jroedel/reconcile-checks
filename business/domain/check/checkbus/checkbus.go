@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"image/png"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -234,6 +235,9 @@ type Config struct {
 	Files    Files
 	Accounts Accounts
 	Now      func() time.Time // time.Now unless a test says otherwise
+
+	// Books is Reconcile (books.go); nil prints from the register alone.
+	Books Books
 }
 
 // Business is the register's rules.
@@ -241,6 +245,7 @@ type Business struct {
 	store    Storer
 	files    Files
 	accounts Accounts
+	books    Books
 	now      func() time.Time
 }
 
@@ -251,7 +256,7 @@ func New(cfg Config) *Business {
 		now = time.Now
 	}
 
-	return &Business{store: cfg.Store, files: cfg.Files, accounts: cfg.Accounts, now: now}
+	return &Business{store: cfg.Store, files: cfg.Files, accounts: cfg.Accounts, books: cfg.Books, now: now}
 }
 
 // ImageDPI is the image's resolution: enough for a person to read a check on a
@@ -266,13 +271,22 @@ const Recent = 5
 // Proposal is the number proposed for the next check, and the last few
 // numbers it came from.
 type Proposal struct {
-	Next int   // 0 when the register has nothing on the account yet
-	Last []int // the most recent first
+	Next int // 0 when neither the register nor Reconcile has a number on the account yet
+
+	// Last is the last few numbers: the register's in the order they were
+	// written, so a second checkbook stands out; with Reconcile's, which
+	// come highest first, both computers' together, highest first.
+	Last []int
+
+	// Books is whether Reconcile's numbers are in it: false offline, or
+	// for an account not linked to Reconcile.
+	Books bool
 }
 
-// Propose is the next number on the account, from the register alone. The
-// person confirms it against the paper; Reconcile's numbers join it with the
-// Reconcile client.
+// Propose is the next number on the account: one more than the highest of
+// the register's and Reconcile's, which has the other computer's checks and
+// the bank's (docs/06, "Numbering"). Offline, the register's alone. The
+// person confirms it against the paper either way.
 func (b *Business) Propose(ctx context.Context, account string) (Proposal, error) {
 	high, err := b.store.Highest(ctx, account)
 	if err != nil {
@@ -285,13 +299,26 @@ func (b *Business) Propose(ctx context.Context, account string) (Proposal, error
 	}
 
 	p := Proposal{}
+
+	var last []int
+	for _, c := range recent {
+		last = append(last, c.Number)
+	}
+
+	if b.books != nil {
+		theirs, err := fromBooks(ctx, func(ctx context.Context) (Numbers, error) { return b.books.Numbers(ctx, account) })
+		if err == nil {
+			p.Books = true
+			high = max(high, theirs.Highest)
+			last = joinNumbers(last, theirs.Last, Recent)
+		}
+	}
+
 	if high > 0 {
 		p.Next = high + 1
 	}
 
-	for _, c := range recent {
-		p.Last = append(p.Last, c.Number)
-	}
+	p.Last = last
 
 	return p, nil
 }
@@ -395,9 +422,32 @@ func (b *Business) Write(ctx context.Context, nc NewCheck) (Check, []byte, error
 		return Check{}, nil, err
 	}
 
-	if qs, err := b.Questions(ctx, nc); err != nil {
+	// A number this register already has is refused here, before Reconcile
+	// is asked: its own sentence says which of this computer's checks.
+	if have, err := b.store.Get(ctx, c.Account, c.Number); err == nil {
+		return Check{}, nil, NumberUsed{Number: have.Number, State: have.State}
+	} else if !errors.Is(err, ErrNotFound) {
 		return Check{}, nil, err
-	} else if len(qs) > 0 {
+	}
+
+	// Then Reconcile, which has the other computer's checks: a refusal
+	// before any question, so nobody answers questions about a check that
+	// won't print.
+	unchecked, err := b.numberQuestion(ctx, nc)
+	if err != nil {
+		return Check{}, nil, err
+	}
+
+	qs, err := b.Questions(ctx, nc)
+	if err != nil {
+		return Check{}, nil, err
+	}
+
+	if unchecked != nil && !slices.Contains(nc.Answered, unchecked.Code) {
+		qs = append(qs, *unchecked)
+	}
+
+	if len(qs) > 0 {
 		return Check{}, nil, Asked{Questions: qs}
 	}
 

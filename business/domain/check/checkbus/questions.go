@@ -99,7 +99,7 @@ func (b *Business) Questions(ctx context.Context, nc NewCheck) ([]Question, erro
 			return nil, err
 		}
 
-		if !known {
+		if !known && !b.knownToBooks(ctx, nc.Account, payee) {
 			ask(AskNewPayee, fmt.Sprintf("%s is new. Keep it?", payee))
 		}
 	}

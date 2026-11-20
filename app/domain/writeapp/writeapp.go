@@ -369,7 +369,7 @@ func (a *App) form(w http.ResponseWriter, r *http.Request, status int, v formVie
 		v.Form.Date = a.cfg.Now().Format(time.DateOnly)
 	}
 
-	v.Payees, _ = a.cfg.Checks.Payees(ctx, "", 200)
+	v.Payees, _ = a.cfg.Checks.PayeesFor(ctx, v.Form.Account, "", 200)
 	v.Left, _ = a.cfg.Checks.LeftPrinting(ctx)
 
 	v.Summary = "Print check"
@@ -481,6 +481,8 @@ func about(code checkbus.Code, nc checkbus.NewCheck) string {
 		return nc.Account + ":" + strconv.FormatInt(int64(nc.Amount), 10)
 	case checkbus.AskNewPayee:
 		return strings.ToLower(strings.TrimSpace(nc.Payee))
+	case checkbus.AskUnchecked:
+		return nc.Account + ":" + strconv.Itoa(nc.Number)
 	}
 
 	return ""

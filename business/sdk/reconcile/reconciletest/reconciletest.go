@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -45,11 +46,47 @@ type Account struct {
 	LastNumbers  []string `json:"last_numbers"`
 }
 
+// Check is a check it holds, as Reconcile answers one.
+type Check struct {
+	ID         string `json:"id"`
+	Number     string `json:"number"`
+	Amount     string `json:"amount"`
+	Payee      string `json:"payee"`
+	WrittenOn  string `json:"written_on"`
+	Memo       string `json:"memo"`
+	State      string `json:"state"`
+	AttachedTo []Link `json:"attached_to"`
+	URL        string `json:"url"`
+	Image      []byte `json:"-"`
+	Key        string `json:"-"` // which key sent it
+}
+
+// Link is a transaction a check is attached to.
+type Link struct {
+	ID  string `json:"id"`
+	URL string `json:"url"`
+}
+
+// Paid is the bank paying a number with no check.
+type Paid struct {
+	Amount string `json:"amount"`
+	Date   string `json:"date"`
+}
+
+// book is what it holds about one account.
+type book struct {
+	checks map[string]*Check // by number
+	paid   map[string][]Paid // by number
+	payees []string
+}
+
 // Server is the fake.
 type Server struct {
 	*httptest.Server
 
 	mu       sync.Mutex
+	books    map[string]*book // by account id
+	down     bool             // answering 503 to the API, as Reconcile being deployed
 	accounts []Account
 	grants   map[string]grant  // code → what it was given for
 	keys     map[string]string // key → the device it was made for
@@ -64,13 +101,15 @@ type grant struct {
 
 // New starts one with the accounts given.
 func New(accounts ...Account) *Server {
-	s := &Server{accounts: accounts, grants: map[string]grant{}, keys: map[string]string{}}
+	s := &Server{accounts: accounts, grants: map[string]grant{}, keys: map[string]string{}, books: map[string]*book{}}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+MetadataPath, s.metadata)
 	mux.HandleFunc("GET "+AuthorizePath, s.authorize)
 	mux.HandleFunc("POST "+TokenPath, s.token)
 	mux.HandleFunc("GET /api/v1/checks/accounts", s.authed(s.listAccounts))
+	mux.HandleFunc("GET /api/v1/accounts/{account}/checks/{number}", s.authed(s.reaches(s.number)))
+	mux.HandleFunc("GET /api/v1/accounts/{account}/payees", s.authed(s.reaches(s.listPayees)))
 
 	s.Server = httptest.NewServer(mux)
 
@@ -104,6 +143,58 @@ func (s *Server) RevokeAll() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	clear(s.keys)
+}
+
+// book is the account's, made when first asked for. With mu held.
+func (s *Server) book(account string) *book {
+	b, ok := s.books[account]
+	if !ok {
+		b = &book{checks: map[string]*Check{}, paid: map[string][]Paid{}}
+		s.books[account] = b
+	}
+
+	return b
+}
+
+// AddCheck puts a check on an account, as if sent from another computer.
+func (s *Server) AddCheck(account string, c Check) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if c.State == "" {
+		c.State = "outstanding"
+	}
+
+	if c.ID == "" {
+		c.ID = random()
+	}
+
+	s.book(account).checks[c.Number] = &c
+}
+
+// Pay has the bank pay a number on an account with no check: a check written
+// by hand from the same book.
+func (s *Server) Pay(account, number, amount, date string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	b := s.book(account)
+	b.paid[number] = append(b.paid[number], Paid{Amount: amount, Date: date})
+}
+
+// SetPayees is an account's payees.
+func (s *Server) SetPayees(account string, names ...string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.book(account).payees = names
+}
+
+// Down makes the API answer 503, as Reconcile being deployed does.
+func (s *Server) Down(down bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.down = down
 }
 
 // Devices is the device_name of each sign-in agreed to, in order.
@@ -254,8 +345,94 @@ func (s *Server) authed(h http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
+		s.mu.Lock()
+		down := s.down
+		s.mu.Unlock()
+
+		if down {
+			http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
+			return
+		}
+
 		h(w, r)
 	}
+}
+
+// reaches answers 404, without a code, for an account the key doesn't
+// reach: as Reconcile does for both "no such account" and "not yours".
+func (s *Server) reaches(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		s.mu.Lock()
+		ok := slices.ContainsFunc(s.accounts, func(a Account) bool { return a.ID == r.PathValue("account") })
+		s.mu.Unlock()
+
+		if !ok {
+			Refuse(w, http.StatusNotFound, "", "account", "There is no such account, or it is not one this key reaches. GET /api/v1/checks/accounts lists those it does.")
+			return
+		}
+
+		h(w, r)
+	}
+}
+
+// number reads a check number as Reconcile does: digits, without leading
+// zeros, at most ten.
+func number(s string) (string, bool) {
+	s = strings.TrimLeft(strings.TrimSpace(s), "0")
+	if s == "" || len(s) > 10 || strings.Trim(s, "0123456789") != "" {
+		return "", false
+	}
+
+	return s, true
+}
+
+func (s *Server) number(w http.ResponseWriter, r *http.Request) {
+	n, ok := number(r.PathValue("number"))
+	if !ok {
+		Refuse(w, http.StatusUnprocessableEntity, "", "number", "The number will not do: a check number is digits, at most ten.")
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	b := s.book(r.PathValue("account"))
+	out := map[string]any{"number": n, "state": "free"}
+
+	switch c, paid := b.checks[n], b.paid[n]; {
+	case c != nil:
+		out["state"], out["check"] = c.State, c.view()
+	case len(paid) > 0:
+		out["state"], out["cleared"] = "cleared", paid
+	}
+
+	write(w, http.StatusOK, out)
+}
+
+func (c *Check) view() Check {
+	v := *c
+	if v.AttachedTo == nil {
+		v.AttachedTo = []Link{}
+	}
+
+	return v
+}
+
+func (s *Server) listPayees(w http.ResponseWriter, r *http.Request) {
+	q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+
+	s.mu.Lock()
+	all := s.book(r.PathValue("account")).payees
+	s.mu.Unlock()
+
+	out := []map[string]string{}
+	for _, name := range all {
+		if strings.Contains(strings.ToLower(name), q) && len(out) < 20 {
+			out = append(out, map[string]string{"name": name})
+		}
+	}
+
+	write(w, http.StatusOK, map[string]any{"payees": out})
 }
 
 func (s *Server) listAccounts(w http.ResponseWriter, _ *http.Request) {

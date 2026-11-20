@@ -72,6 +72,11 @@ func start(opt options, stdout, stderr io.Writer) error {
 		log.Warn("crash reports will not reach the log", "err", err)
 	}
 
+	// SetCrashOutput keeps its own handle on the file for as long as it is
+	// set, and Windows won't delete or replace a file that is open. Let go of
+	// it on the way out, before the file is closed.
+	defer debug.SetCrashOutput(nil, debug.CrashOptions{})
+
 	log.Info("starting", "version", version, "config", cfg.file, "data", cfg.Data)
 
 	k, err := keys(cfg.Data)

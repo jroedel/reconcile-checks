@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/jroedel/reconcile-checks/foundation/sqldb"
@@ -16,6 +17,10 @@ import (
 // customers' accounts under a world-traversable parent, so a database at 0644
 // is one anybody with a shell on the machine can read.
 func TestRestrictTakesTheDatabaseAwayFromEverybodyElse(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file modes are a Unix idea; on Windows the register is protected by living in the user's own %LocalAppData%")
+	}
+
 	dir := t.TempDir()
 	path := filepath.Join(dir, "register.db")
 
@@ -63,6 +68,10 @@ func TestRestrictAcceptsAMissingWalAndShm(t *testing.T) {
 // A database that is not there at all is a different thing from one whose mode
 // cannot be set, and only the second is worth failing a startup over.
 func TestRestrictReportsAFailureThatIsNotAMissingFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file modes are a Unix idea; on Windows the register is protected by living in the user's own %LocalAppData%")
+	}
+
 	dir := t.TempDir()
 
 	// A directory in place of the database: chmod succeeds on it, so the
@@ -271,7 +280,12 @@ func openTemp(t *testing.T) *sql.DB {
 func TestADatabaseIsOpenedAtExactlyItsPath(t *testing.T) {
 	dir := t.TempDir()
 
-	for _, name := range []string{"a#1", "a?2", "a%41"} {
+	names := []string{"a#1", "a?2", "a%41"}
+	if runtime.GOOS == "windows" {
+		names = []string{"a#1", "a%41"} // "?" can't be in a Windows file name at all
+	}
+
+	for _, name := range names {
 		path := filepath.Join(dir, name, "test.db")
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			t.Fatal(err)

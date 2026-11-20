@@ -1,8 +1,8 @@
 # 10 — Install, update and releases
 
 Two computers on two operating systems, kept by people who are not
-programmers. So: **one file to download, nothing else to install, and it
-keeps itself up to date.** Most of what follows was learned in
+programmers. So: **one file to download, nothing else to install, it keeps
+itself up to date, and every merge to `main` is the update it gets.** Most of what follows was learned in
 [sion-backup](https://github.com/jroedel/sion-backup), which ships a Go
 program to Linux, Windows and macOS and updates it in place. Its pull
 requests are cited as sion-backup#N.
@@ -87,7 +87,73 @@ settable in the config, for testing (it is a setting that hands the program
 a binary to run; tests fake GitHub's name and certificate instead); an
 "update available, fetch it?" step (one more thing to ignore).
 
-## Releases
+## Push to deploy: a merge to `main` is a release
+
+**Essential** (decided 2026-11-20). Every merge to `main` that changes the
+program becomes a release, and every computer picks it up by itself
+(above). Nobody tags, nobody uploads, nobody remembers.
+
+Why it matters here more than anywhere:
+
+- **Two computers, two operating systems, kept by people who aren't
+  programmers.** A release that waits on someone to cut it is a fix that
+  sits on `main` for weeks. With push to deploy, a fix merged is a fix on
+  both computers by their next start.
+- **One version everywhere.** The two computers print from one stack of
+  checks and talk to one Reconcile; they should be running the same code
+  within a day of each other, not whichever release someone last remembered
+  to make.
+- **It is how the sibling projects work** (sum-app, mass-intentions,
+  drop-in forms): a merge to `main` deploys. Here "deploy" means "publish
+  the release the computers update to".
+
+### The path from a pull request to the computers
+
+1. **A pull request**, opened by an agent or a person. `main` is protected
+   on GitHub: a pull request is the only way in, for everyone including the
+   owner; no force push; no deleting the branch; conversations resolved
+   before merging. Once CI exists, the Linux and Windows test jobs become
+   required checks too.
+2. **The checks** run on Linux and Windows (below).
+3. **A person reviews and merges.** This is the last human gate, so the
+   pull request says what the change does to the paper and to what reaches
+   Reconcile, not only to the code, and a change to a layout, a renderer or
+   the print options says whether it was tried on real stock. An agent never
+   merges.
+4. **The release workflow**, on the push to `main`:
+   - works out the next version: the latest release's `vX.Y.Z` with `Z + 1`,
+     or `Y + 1` / `X + 1` when the merged pull request carries the label
+     `release: minor` or `release: major`;
+   - runs the checks again on the merged commit;
+   - builds every target, writes `SHA256SUMS`, signs it;
+   - creates a **draft** release for that version at that commit;
+   - runs the release gates against the draft (below);
+   - **publishes** it, which creates the tag.
+5. **The computers** find it at their next start (at most a day), or at
+   **Update now**, and swap to it when no check is in progress.
+
+**Merges that change no program don't release**: a pull request touching
+only `docs/`, `*.md` or `.claude/` builds nothing a computer could receive.
+The workflow's `paths-ignore` says so.
+
+**One release at a time, in order.** The workflow's concurrency group queues
+rather than cancels (`cancel-in-progress: false`), so two quick merges become
+two releases, in the order merged.
+
+**A failed gate leaves a draft**, invisible to `/releases/latest`, and
+nothing reaches a computer. The merge stays on `main`; the next merge that
+fixes it releases both.
+
+**Undoing a release is forward**: the computers never downgrade, so a bad
+release is undone by a revert pull request, which becomes the next, higher
+version. A release that won't even start is caught on the computer by
+probation and rolled back there (above), and its version refused.
+
+**Pausing releases**, if ever needed: a person disables the release workflow
+in GitHub's Actions page, and enables it again after. Merges then wait on
+`main` and go out together with the next one.
+
+### How the release is built
 
 As in sion-backup, hand-rolled with `make` and `gh`, no GoReleaser:
 
@@ -97,23 +163,22 @@ As in sion-backup, hand-rolled with `make` and `gh`, no GoReleaser:
   Windows build ([03](03-the-local-app.md)). Pure Go only, so that a
   cross-built binary runs everywhere, and SQLite through
   `modernc.org/sqlite`.
-- **Version** stamped with `-ldflags -X main.version=$(git describe --tags
-  --always --dirty)`. The release checkout needs `fetch-depth: 0`, or every
-  binary calls itself by a bare hash (sion-backup#4).
-- **Tagging** with `make tag-revision | tag-minor | tag-major`
-  (`scripts/tag`): it switches to `main` and fast-forwards, refuses a dirty
-  tree, unpushed commits, a diverged history or an existing tag, sorts tags
-  by version, pushes the one tag (not `--tags`), and asks for confirmation
-  (sion-backup#15, #16, #18: v0.1.0 there was cut from a feature branch). A
-  person tags; an agent doesn't.
-- **A tag publishes a draft release first**, the gates run against it, and
-  only then is it published (sion-backup#20). Drafts are invisible to
-  `/releases/latest`, so a release that fails a gate never reaches a
-  computer. The traps found there (sion-backup#23, #24): a draft has no tag
-  yet, so it is found by id and `tag_name`, not `gh release view vX`; GitHub
-  allows several drafts with one tag, so a re-run deletes stale drafts and
-  refuses an already-published one; a re-run uses the workflow file from the
-  tagged commit, so fixing the workflow means a new tag.
+- **Version** stamped with `-ldflags -X main.version=vX.Y.Z`, the version the
+  workflow worked out. A build anywhere else stamps `git describe --tags
+  --always --dirty`, which needs `fetch-depth: 0` in CI or every build calls
+  itself by a bare hash (sion-backup#4), and is never a strict `vX.Y.Z`, so
+  it never updates itself.
+- **Tags are made only by publishing a release**, from the workflow. Nobody
+  tags by hand, so the hand-tagging script sion-backup needed
+  (sion-backup#15, #16, #18) has no place here; its lessons that remain are
+  that versions sort by version, not date, and that a release is cut from
+  `main` and nothing else.
+- **Draft first, then gates, then publish** (sion-backup#20). The traps found
+  there (sion-backup#23, #24): a draft has no tag yet, so it is found by id
+  and `tag_name`, not `gh release view vX`; GitHub allows several drafts with
+  one tag, so a re-run deletes stale drafts and refuses an already-published
+  one; a re-run uses the workflow file from its own commit, so a fix to the
+  workflow is a new merge, which push to deploy makes the natural way anyway.
 - **Upload everything in `dist/`** and compare what is attached with
   `ls dist`, rather than a list of patterns: sion-backup v0.6.3 shipped
   without its installers because a pattern missed them (sion-backup#50).

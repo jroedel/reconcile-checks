@@ -172,10 +172,16 @@ offsets, never in Go.
 - **The human in the loop is the pull request, at a minimum.** Everything in
   `git` is a pull request on a branch. An agent opens it; a person reviews and
   merges it. Nothing is committed or pushed to `main` directly, and an agent
-  never merges its own PR. There is no deploy, so the review is the last gate
-  before a check is printed with the change: a PR description says what the
-  change does to the paper and to what reaches Reconcile, not only to the
-  code.
+  never merges its own PR. GitHub enforces it: `main` is protected, and a
+  pull request is the only way in, for everyone.
+- **A merge to `main` is a deploy.** Push to deploy is essential here
+  ([`docs/10`](docs/10-install-update-and-releases.md)): the release workflow
+  turns every merge that changes the program into a release, and both
+  computers update to it by themselves. So the review is the last gate
+  before a check is printed with the change, and a PR description says what
+  the change does to the paper and to what reaches Reconcile, not only to the
+  code. A change to a layout, a renderer or the print options says whether
+  it was tried on real stock.
 - **Agents never print on a real printer.** No `lp`, `lpr`, `lpadmin`,
   `lpoptions -o` (which changes a queue's defaults), and no `ipptool` test
   that sends a job; the program is only ever run with a development config
@@ -193,11 +199,11 @@ offsets, never in Go.
   against Reconcile uses a Reconcile running locally from `../reconcile`.
   Reconcile's side of #166 is changed in that repository, by its own pull
   request, under its own `CLAUDE.md`; not as a side effect of a task here.
-- **Agents never tag or publish a release.** A tag is a release, and a
-  release reaches both computers by itself through self-update
-  ([`docs/10`](docs/10-install-update-and-releases.md)). `make tag-*`,
-  `git tag`, `git push` of a tag and `gh release` are a person's. The
-  self-update tests run against a fake GitHub, never the real one.
+- **Nobody tags or publishes a release by hand**, agents least of all.
+  Releases are made by the workflow, from a merge; `git tag`, pushing a tag,
+  `gh release` and `gh workflow run` are not how anything reaches the
+  computers. The self-update tests run against a fake GitHub, never the
+  real one.
 - **Agents never set GitHub secrets or variables**, and never read
   `secrets.env` if one ever exists. The release signing key is a person's
   to make and keep.

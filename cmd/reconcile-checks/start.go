@@ -27,6 +27,7 @@ import (
 	"github.com/jroedel/reconcile-checks/app/sdk/muxer"
 	"github.com/jroedel/reconcile-checks/app/sdk/page"
 	"github.com/jroedel/reconcile-checks/app/sdk/presence"
+	"github.com/jroedel/reconcile-checks/business/domain/books/booksbus"
 	"github.com/jroedel/reconcile-checks/business/domain/check/checkbus"
 	"github.com/jroedel/reconcile-checks/business/domain/check/stores/checkdb"
 	"github.com/jroedel/reconcile-checks/business/domain/check/stores/checkfiles"
@@ -167,10 +168,15 @@ func start(opt options, stdout, stderr io.Writer) (*relaunch, error) {
 		client.Dial = finder.Dialer(nil)
 	}
 
+	// Reconcile: signing in, and what the register asks of it by this
+	// computer's account keys.
+	signedIn := signIn(cfg, log)
+
 	checks := checkbus.New(checkbus.Config{
 		Store:    checkdb.NewStore(db),
 		Files:    checkfiles.New(filepath.Join(cfg.Data, "checks")),
 		Accounts: settings.ForChecks(),
+		Books:    booksbus.New(booksbus.Config{SignIn: signedIn, Settings: settings}),
 	})
 
 	// restartInto is the version to start once this copy has let go of the
@@ -203,7 +209,7 @@ func start(opt options, stdout, stderr io.Writer) (*relaunch, error) {
 		Updates:    updates,
 		Context:    ctx,
 		Checks:     checks,
-		SignIn:     signIn(cfg, log),
+		SignIn:     signedIn,
 		Settings:   settings,
 		Print:      printbus.New(settings, client),
 		Finder:     finder,

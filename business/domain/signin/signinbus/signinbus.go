@@ -404,3 +404,27 @@ func random() string {
 
 	return base64.RawURLEncoding.EncodeToString(r)
 }
+
+// Number asks Reconcile about a number on one of its accounts.
+func (b *Business) Number(ctx context.Context, account string, number int) (reconcile.Number, error) {
+	key, err := b.usable()
+	if err != nil {
+		return reconcile.Number{}, err
+	}
+
+	n, err := b.cfg.Client.Number(ctx, key, account, number)
+
+	return n, b.answered(err)
+}
+
+// Payees is one of Reconcile's accounts' payees whose name contains q.
+func (b *Business) Payees(ctx context.Context, account, q string) ([]string, error) {
+	key, err := b.usable()
+	if err != nil {
+		return nil, err
+	}
+
+	names, err := b.cfg.Client.Payees(ctx, key, account, q)
+
+	return names, b.answered(err)
+}

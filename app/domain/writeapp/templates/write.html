@@ -34,7 +34,7 @@
 <div class="field">
 <label for="number">Check no.</label>
 <input type="text" id="number" name="number" value="{{.Form.Number}}" inputmode="numeric" required autocomplete="off"{{if eq .Field "number"}} aria-invalid="true" autofocus{{end}}>
-<p class="hint"><span id="last">{{if .Proposal.Last}}The last on this account: {{range $i, $n := .Proposal.Last}}{{if $i}}, {{end}}{{$n}}{{end}}. {{end}}</span>Make sure it is the number on the next check in the tray.</p>
+<p class="hint"><span id="last">{{if .Proposal.Last}}The last on this account{{if .Proposal.Books}}, from both computers{{end}}: {{range $i, $n := .Proposal.Last}}{{if $i}}, {{end}}{{$n}}{{end}}. {{end}}</span>Make sure it is the number on the next check in the tray.</p>
 </div>
 
 <div class="field">

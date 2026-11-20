@@ -58,16 +58,30 @@ func (a *App) Defaults(w http.ResponseWriter, r *http.Request) {
 	reply(w, out)
 }
 
+// Payees completes the payee as it is typed: Reconcile's names on the
+// account first, then the register's (docs/06, "Payees").
+func (a *App) Payees(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+
+	names, err := a.cfg.Checks.PayeesFor(r.Context(), q.Get("account"), q.Get("q"), 20)
+	if err != nil || names == nil {
+		names = []string{}
+	}
+
+	reply(w, map[string][]string{"payees": names})
+}
+
 // Proposal is the number proposed on an account, and its last few.
 func (a *App) Proposal(w http.ResponseWriter, r *http.Request) {
 	var out struct {
-		Next int   `json:"next"`
-		Last []int `json:"last"`
+		Next  int   `json:"next"`
+		Last  []int `json:"last"`
+		Books bool  `json:"books"` // the other computer's numbers are in it, from Reconcile
 	}
 
 	p, err := a.cfg.Checks.Propose(r.Context(), r.URL.Query().Get("account"))
 	if err == nil {
-		out.Next, out.Last = p.Next, p.Last
+		out.Next, out.Last, out.Books = p.Next, p.Last, p.Books
 	}
 
 	if out.Last == nil {

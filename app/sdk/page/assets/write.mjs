@@ -89,7 +89,7 @@ if (form) {
     if (!number.dataset.typed) number.value = j.next ? String(j.next) : "";
 
     const last = $("last");
-    if (last) last.textContent = j.last.length ? `The last on this account: ${j.last.join(", ")}. ` : "";
+    if (last) last.textContent = j.last.length ? `The last on this account${j.books ? ", from both computers" : ""}: ${j.last.join(", ")}. ` : "";
 
     update();
   }
@@ -104,6 +104,27 @@ if (form) {
     if (e.target === number) number.dataset.typed = "1";
     update();
   });
+
+  // The payees as the name is typed: Reconcile's spellings, then this
+  // computer's. Replaces the list the page came with, which was the same
+  // question asked with nothing typed.
+  const list = $("payees");
+  let asked = 0;
+
+  async function complete() {
+    const mine = ++asked;
+    const j = await ask(`/write/payees?account=${encodeURIComponent(form.elements.account.value)}&q=${encodeURIComponent(form.elements.payee.value)}`);
+    if (mine !== asked || !list) return; // a later key has asked again
+
+    list.replaceChildren(...j.payees.map((name) => {
+      const o = document.createElement("option");
+      o.value = name;
+      return o;
+    }));
+  }
+
+  const completeSoon = debounce(() => complete().catch(() => {}), 200);
+  form.elements.payee?.addEventListener("input", completeSoon);
 
   // A payee chosen from the list, or typed and left: offer its last check.
   form.elements.payee?.addEventListener("change", () => offerLast().catch(() => {}));

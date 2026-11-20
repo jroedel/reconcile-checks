@@ -63,10 +63,26 @@ things keep one number from being used twice:
    voids included, so the window in which the other computer can't see it
    is seconds, not days.
 
-**Offline, it prints with a warning** (decided 2026-11-20): *"Reconcile
-can't be reached, so this number couldn't be checked against the other
-computer's checks. Make sure it is the number on the paper."* Refusing to
-print would make the program useless exactly when it should just work.
+**Offline, it prints with a warning** (decided 2026-11-20): *"Check 1043
+couldn't be checked against the other computer's checks: Reconcile can't be
+reached just now. Make sure 1043 is the number on the paper in the tray.
+Print it?"* Refusing to print would make the program useless exactly when it
+should just work.
+
+As built:
+
+- The register is asked first, then Reconcile, then the questions, so that
+  nobody answers questions about a check that won't print. A number
+  Reconcile has is refused with what it holds: the check's payee, amount and
+  day; a voided number; or what the bank paid and when.
+- The warning is one of the form's questions, answered once for that
+  number on that account. It is asked when Reconcile can't be reached,
+  answers with anything but the number's state, or when this computer is
+  signed out; the reason is in the sentence.
+- An account not linked to Reconcile, or a program with no Reconcile, is not
+  asked about and not warned: there is nothing to check against.
+- Reconcile is given five seconds, for the proposal and for the press of
+  Print alike.
 
 A shared register (a file on a network share) was considered and rejected:
 SQLite over a network share corrupts, and Reconcile is already the place
@@ -90,15 +106,16 @@ An offline check sent later can still collide. Reconcile answers
 ## Payees
 
 Names complete from Reconcile's payees as they are typed, so one plumber
-doesn't become three spellings; offline, or before signing in, from the
-payees in the local register. The matches are listed under the field.
+doesn't become three spellings; then the register's, for payees only this
+computer has paid; offline, or before signing in, the register's alone. The
+matches are listed under the field.
 
 A payee already in the register brings its last check with it: the amount,
 memo and stub note are offered as defaults. A payee paid the same amount for
 the same thing every week is a check of a few keystrokes; the date and number
 still come fresh.
 
-A payee neither list knows is asked about once: *"Payee B Plumbing is new.
+A payee neither list knows (Reconcile's matched without regard to case) is asked about once: *"Payee B Plumbing is new.
 Keep it?"*, which catches a typo before it is printed on paper.
 
 ## After it prints

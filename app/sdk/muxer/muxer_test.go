@@ -1,6 +1,7 @@
 package muxer_test
 
 import (
+	"context"
 	"encoding/base64"
 	"io"
 	"log/slog"
@@ -8,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +18,12 @@ import (
 	"github.com/jroedel/reconcile-checks/app/sdk/muxer"
 	"github.com/jroedel/reconcile-checks/app/sdk/page"
 	"github.com/jroedel/reconcile-checks/app/sdk/presence"
+	"github.com/jroedel/reconcile-checks/business/domain/print/printbus"
+	"github.com/jroedel/reconcile-checks/business/domain/settings/settingsbus"
+	"github.com/jroedel/reconcile-checks/business/domain/settings/stores/settingsfile"
+	"github.com/jroedel/reconcile-checks/foundation/ipp"
+	"github.com/jroedel/reconcile-checks/foundation/ipp/ipptest"
+	"github.com/jroedel/reconcile-checks/foundation/mdns"
 	"github.com/jroedel/reconcile-checks/foundation/sqldb"
 )
 
@@ -26,6 +34,25 @@ type fixture struct {
 	sessions *mid.Sessions
 	keys     mid.Keys
 	quit     chan struct{}
+	printer  *ipptest.Server
+	config   string
+}
+
+// finder "finds" the fake printer, as mDNS would find a real one.
+type finder struct{ s *ipptest.Server }
+
+func (f finder) Browse(_ context.Context, service string) ([]mdns.Service, error) {
+	if service != "_ipp._tcp" {
+		return nil, nil
+	}
+
+	u, _ := url.Parse(f.s.Server.URL)
+	port, _ := strconv.Atoi(u.Port())
+
+	return []mdns.Service{{
+		Instance: "HP LaserJet M612 [46CBDF]", Type: service, Host: u.Hostname(), Port: port,
+		TXT: map[string]string{"rp": "ipp/print", "ty": "HP LaserJet M612"},
+	}}, nil
 }
 
 func setup(t *testing.T) *fixture {
@@ -53,6 +80,12 @@ func setup(t *testing.T) *fixture {
 
 	quit := make(chan struct{}, 1)
 
+	printer := ipptest.New()
+	t.Cleanup(printer.Close)
+
+	config := filepath.Join(t.TempDir(), "config.toml")
+	settings := settingsbus.New(settingsfile.New(config))
+
 	h, err := muxer.New(muxer.Config{
 		Log:      log,
 		Version:  "v0.0.0-test",
@@ -63,12 +96,15 @@ func setup(t *testing.T) *fixture {
 		DB:       db,
 		Schema:   sqldb.Infrastructure,
 		Quit:     func() { quit <- struct{}{} },
+		Settings: settings,
+		Print:    printbus.New(settings, &ipp.Client{User: "reconcile-checks"}),
+		Finder:   finder{printer},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	return &fixture{h: h, sessions: sessions, keys: keys, quit: quit}
+	return &fixture{h: h, sessions: sessions, keys: keys, quit: quit, printer: printer, config: config}
 }
 
 type req struct {
@@ -143,6 +179,11 @@ func TestTheGates(t *testing.T) {
 		{"a whole-page preview", req{method: "GET", path: "/preview.png?payee=Payee+A&amount=12.50&whole=1", session: true}, http.StatusOK},
 		{"a preview without the session", req{method: "GET", path: "/preview.png?payee=Payee+A"}, http.StatusUnauthorized},
 		{"a preview of an amount that isn't one", req{method: "GET", path: "/preview.png?amount=12.345", session: true}, http.StatusUnprocessableEntity},
+		{"adding a printer from another website", req{method: "POST", path: "/settings/printers", session: true, site: "cross-site", origin: "https://evil.example", form: f.token()}, http.StatusForbidden},
+		{"adding a printer without the session", req{method: "POST", path: "/settings/printers", site: "same-origin", origin: "http://" + host, form: f.token()}, http.StatusUnauthorized},
+		{"a calibration page from another website", req{method: "POST", path: "/settings/accounts/checking-a/calibrate", session: true, site: "cross-site", origin: "https://evil.example", form: f.token()}, http.StatusForbidden},
+		{"a printer that isn't there", req{method: "GET", path: "/settings/printer?name=Nowhere", session: true}, http.StatusNotFound},
+		{"an account that isn't there", req{method: "GET", path: "/settings/accounts/nowhere", session: true}, http.StatusNotFound},
 		{"a preview of a payee too long", req{method: "GET", path: "/preview.png?amount=1&payee=" + strings.Repeat("x", 300), session: true}, http.StatusUnprocessableEntity},
 	}
 
@@ -252,4 +293,94 @@ func find(page, name string) string {
 	}
 
 	return ""
+}
+
+// A printer is found, added and asked what it offers; an account is set up on
+// it; and its calibration page reaches the printer with the account's options
+// -- all through the pages, as a person would.
+func TestSettingUpAnAccountAndPrintingTheCalibrationPage(t *testing.T) {
+	f := setup(t)
+
+	post := func(path string, form url.Values) *httptest.ResponseRecorder {
+		t.Helper()
+
+		for k, v := range f.token() {
+			form[k] = v
+		}
+
+		return f.do(req{method: "POST", path: path, session: true, site: "same-origin", origin: "http://" + host, form: form})
+	}
+
+	get := func(path string) string {
+		t.Helper()
+
+		w := f.do(req{method: "GET", path: path, session: true})
+		if w.Code != http.StatusOK {
+			t.Fatalf("GET %s: %d\n%s", path, w.Code, w.Body)
+		}
+
+		return w.Body.String()
+	}
+
+	found := get("/settings/printers/find")
+	if !strings.Contains(found, "HP LaserJet M612 [46CBDF]") || !strings.Contains(found, f.printer.URL) {
+		t.Fatalf("the printer on the network is not listed:\n%s", found)
+	}
+
+	w := post("/settings/printers", url.Values{"name": {"Office M612"}, "url": {f.printer.URL}})
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("adding the printer: %d\n%s", w.Code, w.Body)
+	}
+
+	if page := get(w.Header().Get("Location")); !strings.Contains(page, "HP LaserJet M612") || !strings.Contains(page, "tray-1") {
+		t.Errorf("the printer's page doesn't show what it offers:\n%s", page)
+	}
+
+	if page := get("/settings/accounts/new"); !strings.Contains(page, `<option value="tray-1">`) {
+		t.Errorf("the account form doesn't offer the printer's trays:\n%s", page)
+	}
+
+	// An invented account (CLAUDE.md, "This repository is public").
+	account := url.Values{
+		"key": {"checking-a"}, "name": {"Checking A"}, "last4": {"1234"},
+		"stock": {"walmart-voucher-top"}, "printer": {"Office M612"},
+		"tray": {"tray-1"}, "media_type": {"stationery-preprinted"},
+		"feed": {"face down, top edge in first"}, "ceiling": {"5,000"},
+		"offset_x": {"0.5"}, "offset_y": {"-1"},
+	}
+
+	bad := url.Values{}
+	for k, v := range account {
+		bad[k] = v
+	}
+	bad["last4"] = []string{"123456789"}
+
+	if w := post("/settings/accounts", bad); w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "last four digits") {
+		t.Errorf("a whole account number was not refused: %d", w.Code)
+	}
+
+	if w := post("/settings/accounts", account); w.Code != http.StatusSeeOther {
+		t.Fatalf("adding the account: %d\n%s", w.Code, w.Body)
+	}
+
+	if w := post("/settings/accounts/checking-a/calibrate", url.Values{}); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "job 1") {
+		t.Fatalf("the calibration page: %d\n%s", w.Code, w.Body)
+	}
+
+	printed := f.printer.Printed()
+	if len(printed) != 1 {
+		t.Fatalf("%d pages reached the printer", len(printed))
+	}
+
+	if got := printed[0].Job["media-col/media-source"]; len(got) != 1 || got[0] != "tray-1" {
+		t.Errorf("printed from %q", got)
+	}
+
+	if page := get("/settings/job?printer=Office+M612&job=1"); !strings.Contains(page, "completed") {
+		t.Errorf("the job's page:\n%s", page)
+	}
+
+	if page := get("/settings"); !strings.Contains(page, "Checking A") || !strings.Contains(page, "Office M612") {
+		t.Errorf("the overview doesn't list the account and printer:\n%s", page)
+	}
 }

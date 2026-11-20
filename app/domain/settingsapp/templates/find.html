@@ -1,0 +1,38 @@
+{{define "title"}}Add a printer · Reconcile Checks{{end}}
+{{define "content"}}
+<h1>Add a printer</h1>
+{{with .Data}}
+{{if .Error}}<p class="notice" role="alert">{{.Error}}</p>{{end}}
+
+<h2>On the network</h2>
+{{if .Found}}
+<p>These printers answered. A printer asleep may need a moment; <a href="/settings/printers/find">look again</a>.</p>
+{{range .Found}}
+<form method="post" action="/settings/printers" class="field">
+<input type="hidden" name="form_token" value="{{$.FormToken}}">
+<input type="hidden" name="url" value="{{.URL}}">
+<input type="hidden" name="name" value="{{.Name}}">
+<p><strong>{{.Name}}</strong>{{if .Model}}, {{.Model}}{{end}}<br><span class="hint">{{.URL}}{{if .Secure}} (encrypted){{end}}</span></p>
+<button type="submit" class="quiet">Add {{.Name}}</button>
+</form>
+{{end}}
+{{else}}
+<p>No printer answered. Check that the printer is on and on the same network as this computer, then <a href="/settings/printers/find">look again</a>, or type its address below.</p>
+{{end}}
+
+<h2>By its address</h2>
+<form method="post" action="/settings/printers">
+<input type="hidden" name="form_token" value="{{$.FormToken}}">
+<div class="field">
+<label for="name">Name</label>
+<input type="text" id="name" name="name" value="{{.Name}}" required placeholder="Office M612">
+</div>
+<div class="field">
+<label for="url">Address</label>
+<input type="text" id="url" name="url" value="{{.URL}}" required placeholder="ipps://printer.local/ipp/print">
+<p class="hint">The printer's IPP address, as its own web page or the network list shows it. ipps:// is encrypted, and better when the printer offers it.</p>
+</div>
+<button type="submit">Add the printer</button>
+</form>
+{{end}}
+{{end}}

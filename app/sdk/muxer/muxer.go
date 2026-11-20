@@ -39,10 +39,13 @@ import (
 	"github.com/jroedel/reconcile-checks/app/domain/homeapp"
 	"github.com/jroedel/reconcile-checks/app/domain/launchapp"
 	"github.com/jroedel/reconcile-checks/app/domain/previewapp"
+	"github.com/jroedel/reconcile-checks/app/domain/settingsapp"
 	"github.com/jroedel/reconcile-checks/app/sdk/health"
 	"github.com/jroedel/reconcile-checks/app/sdk/mid"
 	"github.com/jroedel/reconcile-checks/app/sdk/page"
 	"github.com/jroedel/reconcile-checks/app/sdk/presence"
+	"github.com/jroedel/reconcile-checks/business/domain/print/printbus"
+	"github.com/jroedel/reconcile-checks/business/domain/settings/settingsbus"
 	"github.com/jroedel/reconcile-checks/foundation/sqldb"
 	"github.com/jroedel/reconcile-checks/foundation/web"
 )
@@ -80,6 +83,10 @@ type Config struct {
 	// Stock is the layout the preview draws on, until accounts each name
 	// their own.
 	Stock string
+
+	Settings *settingsbus.Business
+	Print    *printbus.Business
+	Finder   settingsapp.Finder
 }
 
 // DefaultStock is the one stock this program knows today.
@@ -92,7 +99,19 @@ func New(cfg Config) (http.Handler, error) {
 		return nil, err
 	}
 
-	home, err := homeapp.New(homeapp.Config{Render: cfg.Render, ConfigFile: cfg.ConfigFile, DataDir: cfg.DataDir})
+	home, err := homeapp.New(homeapp.Config{Render: cfg.Render})
+	if err != nil {
+		return nil, err
+	}
+
+	settings, err := settingsapp.New(settingsapp.Config{
+		Render:     cfg.Render,
+		Settings:   cfg.Settings,
+		Print:      cfg.Print,
+		Finder:     cfg.Finder,
+		ConfigFile: cfg.ConfigFile,
+		DataDir:    cfg.DataDir,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +125,18 @@ func New(cfg Config) (http.Handler, error) {
 	// where it came from.
 	app := http.NewServeMux()
 	app.HandleFunc("GET /{$}", home.Home)
-	app.HandleFunc("GET /settings", home.Settings)
+	app.HandleFunc("GET /settings", settings.Settings)
+	app.HandleFunc("GET /settings/printers/find", settings.Find)
+	app.HandleFunc("POST /settings/printers", settings.AddPrinter)
+	app.HandleFunc("GET /settings/printer", settings.Printer)
+	app.HandleFunc("POST /settings/printer/trust", settings.Trust)
+	app.HandleFunc("POST /settings/printer/remove", settings.RemovePrinter)
+	app.HandleFunc("GET /settings/accounts/new", settings.NewAccount)
+	app.HandleFunc("POST /settings/accounts", settings.SaveAccount)
+	app.HandleFunc("GET /settings/accounts/{key}", settings.Account)
+	app.HandleFunc("POST /settings/accounts/{key}", settings.SaveAccount)
+	app.HandleFunc("POST /settings/accounts/{key}/calibrate", settings.Calibrate)
+	app.HandleFunc("GET /settings/job", settings.Job)
 	app.HandleFunc("GET /events", cfg.Presence.Events)
 	app.HandleFunc("GET /preview.png", preview.Preview)
 	app.HandleFunc("POST /quit", launch.Quit)

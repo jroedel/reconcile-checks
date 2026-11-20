@@ -1,0 +1,47 @@
+{{define "title"}}{{.Data.Printer.Name}} · Reconcile Checks{{end}}
+{{define "content"}}
+{{with .Data}}
+<h1>{{.Printer.Name}}</h1>
+<p class="hint">{{.Printer.URL}}</p>
+
+{{if .Changed}}
+<p class="notice" role="alert">{{.Error}}</p>
+<form method="post" action="/settings/printer/trust" class="inline">
+<input type="hidden" name="form_token" value="{{$.FormToken}}">
+<input type="hidden" name="name" value="{{.Printer.Name}}">
+<button type="submit">Trust the printer's new certificate</button>
+</form>
+{{else if .Error}}
+<p class="notice" role="alert">{{.Error}}</p>
+{{else}}
+{{if .Unpinned}}
+<p class="notice" role="alert">This printer's certificate wasn't remembered when it was added, so nothing will print on it until it is.</p>
+<form method="post" action="/settings/printer/trust" class="inline">
+<input type="hidden" name="form_token" value="{{$.FormToken}}">
+<input type="hidden" name="name" value="{{.Printer.Name}}">
+<button type="submit">Remember its certificate</button>
+</form>
+{{end}}
+<h2>What it says about itself</h2>
+<dl class="facts">
+<dt>Printer</dt><dd>{{.Attrs.MakeAndModel}}</dd>
+<dt>Now</dt><dd>{{.Attrs.State}}{{range .Attrs.StateReasons}}{{if ne . "none"}}, {{.}}{{end}}{{end}}</dd>
+<dt>Trays</dt><dd>{{join .Attrs.Sources}}</dd>
+<dt>Media types</dt><dd>{{join .Attrs.Types}}</dd>
+<dt>Paper</dt><dd>{{join .Attrs.Media}}</dd>
+<dt>Sides</dt><dd>{{join .Attrs.Sides}} (unless told: {{.Attrs.SidesDefault}})</dd>
+<dt>Scaling</dt><dd>{{join .Attrs.Scaling}} (unless told: {{.Attrs.ScalingDefault}})</dd>
+<dt>Margins</dt><dd>{{printf "%.2f" .Attrs.Margins.Top}} mm top, {{printf "%.2f" .Attrs.Margins.Left}} mm left</dd>
+<dt>Documents</dt><dd>{{join .Attrs.Formats}}</dd>
+</dl>
+<p class="hint">Every check is sent one-sided and unscaled, whatever the printer does unless told.</p>
+{{end}}
+
+<form method="post" action="/settings/printer/remove" class="aside">
+<input type="hidden" name="form_token" value="{{$.FormToken}}">
+<input type="hidden" name="name" value="{{.Printer.Name}}">
+<button type="submit" class="quiet">Remove {{.Printer.Name}}</button>
+</form>
+<p><a href="/settings">Back to Settings</a></p>
+{{end}}
+{{end}}

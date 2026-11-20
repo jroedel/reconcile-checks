@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -26,9 +27,14 @@ import (
 	"github.com/jroedel/reconcile-checks/app/sdk/page"
 	"github.com/jroedel/reconcile-checks/app/sdk/presence"
 	"github.com/jroedel/reconcile-checks/business/domain/check/stores/checkdb"
+	"github.com/jroedel/reconcile-checks/business/domain/print/printbus"
+	"github.com/jroedel/reconcile-checks/business/domain/settings/settingsbus"
+	"github.com/jroedel/reconcile-checks/business/domain/settings/stores/settingsfile"
 	"github.com/jroedel/reconcile-checks/foundation/browser"
+	"github.com/jroedel/reconcile-checks/foundation/ipp"
 	"github.com/jroedel/reconcile-checks/foundation/lockfile"
 	"github.com/jroedel/reconcile-checks/foundation/logger"
+	"github.com/jroedel/reconcile-checks/foundation/mdns"
 	"github.com/jroedel/reconcile-checks/foundation/sqldb"
 	"github.com/jroedel/reconcile-checks/foundation/web"
 )
@@ -118,7 +124,21 @@ func start(opt options, stdout, stderr io.Writer) error {
 		return err
 	}
 
+	// Printers: this computer's, kept in the config file. On Linux the IPP
+	// client resolves .local names itself, which a pure-Go build can't
+	// otherwise; Windows resolves them (docs/05-printing.md).
+	settings := settingsbus.New(settingsfile.New(cfg.file))
+	finder := &mdns.Resolver{}
+	client := &ipp.Client{User: app}
+
+	if runtime.GOOS != "windows" {
+		client.Dial = finder.Dialer(nil)
+	}
+
 	handler, err := muxer.New(muxer.Config{
+		Settings:   settings,
+		Print:      printbus.New(settings, client),
+		Finder:     finder,
 		Log:        log,
 		Version:    version,
 		Port:       func() string { return port },

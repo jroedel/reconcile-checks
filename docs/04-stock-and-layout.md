@@ -155,8 +155,12 @@ Table tests, at least: 0.05, 1.00, 1.10, 11.00, 13.00, 19.99, 21.00, 99.99,
 ## Alignment and calibration
 
 **Print calibration page** in Settings prints a calibration page **on plain
-paper**: the layout's boxes outlined, with a cross at each corner and a ruler along
-two edges. Held to the light against a real check, it shows how far off the
+paper**: the layout's boxes outlined, the stock's own rules, and numbered
+rulers along two edges. No corner crosses: a sheet's corners lie inside every
+printer's unprintable margin. It goes through the account's tray with exactly
+the options a check is printed with, shifted by the account's current
+offset, so it shows where this printer would put a check's ink now; so the
+checks come out of the tray first, and plain paper goes in. Held to the light against a real check, it shows how far off the
 printer is. The correction is an offset in the config, `x` and `y` in
 millimetres, applied to the whole page, **never edited into the layout**:
 the layout describes the stock, and the offset describes this printer. Each

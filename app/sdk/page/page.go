@@ -114,7 +114,7 @@ func (r *Renderer) Add(name string, fsys fs.FS, file string) error {
 		return fmt.Errorf("page: two pages are both called %q", name)
 	}
 
-	t, err := template.New(name).ParseFS(baseFS, "templates/base.html")
+	t, err := template.New(name).Funcs(funcs).ParseFS(baseFS, "templates/base.html")
 	if err != nil {
 		return fmt.Errorf("page: parsing the base: %w", err)
 	}
@@ -126,6 +126,13 @@ func (r *Renderer) Add(name string, fsys fs.FS, file string) error {
 	r.pages[name] = t
 
 	return nil
+}
+
+// funcs is what every page may call beyond html/template's own: kept to what
+// a page can't say without it.
+var funcs = template.FuncMap{
+	// join lists values as a sentence lists them: "tray-1, tray-2".
+	"join": func(ss []string) string { return strings.Join(ss, ", ") },
 }
 
 // Pages lists the pages added, for a test that every one renders.

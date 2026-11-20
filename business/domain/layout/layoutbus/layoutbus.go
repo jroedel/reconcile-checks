@@ -31,6 +31,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/jroedel/reconcile-checks/business/types/money"
+	"github.com/jroedel/reconcile-checks/foundation/ipp"
 	"github.com/jroedel/reconcile-checks/foundation/render"
 	"github.com/jroedel/reconcile-checks/layouts"
 )
@@ -53,7 +54,10 @@ type Layout struct {
 	Size    float64 `toml:"size"`
 	MinSize float64 `toml:"min_size"`
 
-	Page struct{ Width, Height float64 } `toml:"page"`
+	Page struct {
+		Width, Height float64
+		Media         string // the paper's PWG name, for the print job
+	} `toml:"page"`
 	Face struct {
 		X, Y          float64
 		Width, Height float64
@@ -143,6 +147,18 @@ func Load(name string) (Layout, error) {
 
 	if l.Page.Width <= 0 || l.Page.Height <= 0 || l.Size <= 0 || l.MinSize <= 0 || l.MinSize > l.Size {
 		return l, fmt.Errorf("the layout %s has no usable page size or text size", name)
+	}
+
+	// The paper the printer is asked for is the page the layout describes:
+	// a letter layout sent as A4 would be scaled or refused.
+	x, y, err := ipp.MediaSize(l.Page.Media)
+	if err != nil {
+		return l, fmt.Errorf("the layout %s: %w", name, err)
+	}
+
+	if math.Abs(float64(x)/100-l.Page.Width) > 1 || math.Abs(float64(y)/100-l.Page.Height) > 1 {
+		return l, fmt.Errorf("the layout %s is %g by %g mm, but its paper %s is %g by %g mm",
+			name, l.Page.Width, l.Page.Height, l.Page.Media, float64(x)/100, float64(y)/100)
 	}
 
 	return l, nil

@@ -207,9 +207,11 @@ jobs:
 
           - **Windows**: `reconcile-checks-windows-amd64.exe`. Windows says
             *"Windows protected your PC"* the first time: **More info → Run
-            anyway**.
+            anyway**. It installs itself, adds Reconcile Checks to the Start
+            menu, and opens Settings; the download can then be deleted.
           - **Linux**: `reconcile-checks-linux-amd64`; `chmod +x` it, then run
-            it.
+            it. It installs itself in `~/.local/bin`, with an entry in the
+            applications menu.
 
           `SHA256SUMS` lists every file's hash, and `SHA256SUMS.sig` is its
           signature by the release key, which the program checks before it

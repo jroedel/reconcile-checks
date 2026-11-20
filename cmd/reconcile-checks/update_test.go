@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"testing"
@@ -84,5 +86,41 @@ func TestHealthyIsTheVersionWanted(t *testing.T) {
 
 	if waitHealthy(t.Context(), func() int { return port }, "v1.2.3", 600*time.Millisecond) {
 		t.Error("waited for an answer that never came, and got one")
+	}
+}
+
+// Only a release, started as a person starts it and not from where it is
+// installed, installs itself: never a development build, nor one run with a
+// test config.
+func TestWhatInstallsItself(t *testing.T) {
+	dir := t.TempDir()
+	download := filepath.Join(dir, "download")
+	installed := filepath.Join(dir, "installed")
+
+	for _, f := range []string{download, installed} {
+		if err := os.WriteFile(f, []byte(f), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cases := []struct {
+		name    string
+		version string
+		opt     options
+		self    string
+		want    bool
+	}{
+		{"a release, downloaded", "v1.2.3", options{}, download, true},
+		{"a release, installed", "v1.2.3", options{}, installed, false},
+		{"a development build", "dev", options{}, download, false},
+		{"a CI build", "v0.0.0-ci", options{}, download, false},
+		{"a test config", "v1.2.3", options{config: "/tmp/x/config.toml"}, download, false},
+		{"told not to", "v1.2.3", options{noInstall: true}, download, false},
+	}
+
+	for _, c := range cases {
+		if got := wantsInstalling(c.version, c.opt, c.self, installed); got != c.want {
+			t.Errorf("%s: %v, want %v", c.name, got, c.want)
+		}
 	}
 }

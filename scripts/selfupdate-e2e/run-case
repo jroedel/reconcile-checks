@@ -7,7 +7,7 @@
 #   NEXT_VERSION     what the release offers
 #   EXPECT           updated | refused | no-key | nothing-to-do | not-writable
 #                    | app-updated | app-rolled-back | probation-rolled-back
-#                    | update-now
+#                    | update-now | first-run
 #   INSTALL_DIR      where the program is installed (default: the person's own)
 #   INSTALL_OWNER    who owns that folder (default: the person)
 #
@@ -129,6 +129,58 @@ http() {
     } >&3
     cat <&3' "$method" "$path" "$cookie" "$form" 2>/dev/null | tr -d '\r'
 }
+
+# ---------------------------------------------------------------------------
+# The first run: a release downloaded and run as it is, with no config, as a
+# person runs it. It installs itself, adds the menu entry, starts the
+# installed copy, and leaves. In this container its home is its own.
+# ---------------------------------------------------------------------------
+
+if [ "$EXPECT" = first-run ]; then
+  rm -f "$EXE"
+  as_person mkdir -p "$HOME_DIR/Downloads"
+  download="$HOME_DIR/Downloads/reconcile-checks-linux-amd64"
+  install -m 0755 -o "$PERSON" /in/current "$download"
+
+  out=$(as_person "$download" 2>&1)
+  status=$?
+  sed 's/^/      | /' <<<"$out" | grep -v 'level=' | head -3
+
+  [ "$status" -eq 0 ] && good "the download ran and exited" || bad "the download exited $status"
+  grep -q "is installed at $EXE" <<<"$out" && good "it said where it installed itself" || bad "it didn't say where"
+
+  [[ "$(installed)" == *" $CURRENT_VERSION "* ]] && good "the program is at $EXE, $CURRENT_VERSION" \
+                                                || bad "nothing runnable at $EXE"
+
+  entry="$HOME_DIR/.local/share/applications/reconcile-checks.desktop"
+  if grep -qx "Exec=\"$EXE\"" "$entry" 2>/dev/null; then
+    good "the menu entry opens $EXE"
+  else
+    bad "no menu entry for $EXE: $(cat "$entry" 2>/dev/null)"
+  fi
+
+  [ -s "$HOME_DIR/.local/share/icons/hicolor/256x256/apps/reconcile-checks.png" ] && good "with its icon" || bad "no icon"
+
+  if wait_health "$CURRENT_VERSION" 20; then
+    good "and the installed copy is running: /healthz says ok $CURRENT_VERSION"
+  else
+    bad "nothing answers as $CURRENT_VERSION"
+  fi
+
+  pgrep -a -f "^$EXE --settings" >/dev/null && good "started at Settings, for the printer" || bad "not started with --settings"
+
+  # The download run again hands over to the running copy, and installs
+  # nothing.
+  as_person "$download" >/dev/null 2>&1 && good "the download run again hands over" || bad "the download run again failed"
+  sleep 1
+  [ "$(copies)" = 1 ] && good "one copy running" || bad "$(copies) copies running"
+
+  as_person "$EXE" uninstall >/tmp/uninstall.log 2>&1
+  grep -q "quit Reconcile Checks first" /tmp/uninstall.log && good "uninstall refuses while it runs" \
+                                                           || bad "uninstall while running: $(cat /tmp/uninstall.log)"
+
+  exit "$fail"
+fi
 
 # ---------------------------------------------------------------------------
 # Update now: the person presses it in Settings, in the page the program

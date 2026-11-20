@@ -263,6 +263,23 @@ func TestASecondStartGetsInWithTheLaunchKey(t *testing.T) {
 	if again := f.do(req{method: "GET", path: path}); again.Code != http.StatusForbidden {
 		t.Errorf("the same token twice: %d, want 403", again.Code)
 	}
+
+	if to := first.Header().Get("Location"); to != "/" {
+		t.Errorf("open went to %q, want home", to)
+	}
+}
+
+// The first start after installing opens at Settings; nothing else in the
+// query can send the browser anywhere.
+func TestTheFirstStartOpensAtSettings(t *testing.T) {
+	f := setup(t)
+
+	for to, want := range map[string]string{"settings": "/settings", "https://evil.example": "/", "/checks": "/"} {
+		w := f.do(req{method: "GET", path: "/open?k=" + url.QueryEscape(f.sessions.Mint()) + "&to=" + url.QueryEscape(to)})
+		if got := w.Header().Get("Location"); w.Code != http.StatusSeeOther || got != want {
+			t.Errorf("to=%s: %d to %q, want %q", to, w.Code, got, want)
+		}
+	}
 }
 
 func TestEveryAnswerCarriesThePolicy(t *testing.T) {

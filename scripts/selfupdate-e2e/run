@@ -94,6 +94,7 @@ CASES=(
   "app-restart|none|next|app-updated|"
   "app-restart-hangs|none|hang|app-rolled-back|"
   "update-now|none|next|update-now|"
+  "first-run|none|next|first-run|CURRENT_KIND=next CURRENT_VERSION=$NEXT_VERSION"
 
   # -- A version that installs, starts, and keeps failing: probation gives
   #    up on it at the fourth start.

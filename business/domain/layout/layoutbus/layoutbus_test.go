@@ -375,6 +375,10 @@ func golden(t *testing.T, name string, got []byte) {
 		t.Fatalf("%v (run make golden to make it)", err)
 	}
 
+	if bytes.Equal(got, bytes.ReplaceAll(want, []byte("\r\n"), []byte("\n"))) && !bytes.Equal(got, want) {
+		t.Fatalf("%s was checked out with Windows line endings; .gitattributes should keep testdata text as LF", name)
+	}
+
 	if !bytes.Equal(got, want) {
 		gotLines := strings.Split(string(got), "\n")
 		wantLines := strings.Split(string(want), "\n")

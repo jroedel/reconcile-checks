@@ -42,7 +42,7 @@ func TestThePDFIsValidAndItsTextReadsBack(t *testing.T) {
 	}
 
 	if _, err := exec.LookPath("pdftotext"); err == nil {
-		out, err := exec.Command("pdftotext", path, "-").Output()
+		out, err := exec.Command("pdftotext", "-enc", "UTF-8", path, "-").Output()
 		if err != nil {
 			t.Fatalf("pdftotext: %v", err)
 		}

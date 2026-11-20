@@ -8,8 +8,9 @@
 //   - Image: the check face with the stock drawn in, for Reconcile and the
 //     live preview (docs/07-the-image.md). No offset; "VOID" across it when
 //     the check was voided.
-//   - Calibration: the layout's boxes outlined on plain paper, with corner
-//     crosses and rulers, to hold against a check.
+//   - Calibration: the layout's boxes outlined on plain paper, with the
+//     stock's rules and numbered rulers, to hold against a check. No corner
+//     crosses: a page's corners are inside the printer's margin.
 //
 // The rules about which fields a check must have (a payee, an amount over
 // zero) are checkbus's. This package says only whether what it was given fits.

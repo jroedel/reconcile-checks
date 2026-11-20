@@ -1,7 +1,7 @@
 # The golden files are compared byte for byte. A checkout on Windows must not
 # turn their line endings into CRLF, or every golden test fails there for a
 # reason that has nothing to do with the check.
-*/testdata/*.txt text eol=lf
+**/testdata/*.txt text eol=lf
 
 # Binary, never touched.
 *.png  binary

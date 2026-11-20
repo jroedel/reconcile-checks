@@ -152,9 +152,13 @@ Why it matters here more than anywhere:
      `release: minor` or `release: major`;
    - runs the checks again on the merged commit;
    - builds every target, writes `SHA256SUMS`, signs it;
-   - creates a **draft** release for that version at that commit;
-   - runs the release gates against the draft (below);
+   - runs the gates (below);
+   - creates a **draft** release for that version at that commit, and
+     checks that it carries every file built;
    - **publishes** it, which creates the tag.
+
+   Until `release-key.pub` is on `main`, the workflow releases nothing and
+   says so as a warning (`.github/workflows/release.yml`, the `ready` job).
 5. **The computers** find it at their next start (at most a day), or at
    **Update now**, and swap to it when no check is in progress.
 
@@ -199,8 +203,11 @@ As in sion-backup, hand-rolled with `make` and `gh`, no GoReleaser:
   (sion-backup#15, #16, #18) has no place here; its lessons that remain are
   that versions sort by version, not date, and that a release is cut from
   `main` and nothing else.
-- **Draft first, then gates, then publish** (sion-backup#20). The traps found
-  there (sion-backup#23, #24): a draft has no tag yet, so it is found by id
+- **Gates, then a draft, then publish.** sion-backup drafts first and gates
+  the draft (sion-backup#20); here every gate runs on `dist/` before the
+  draft exists, since none of them needs it, and only "every file built is
+  attached" runs on the draft. The traps found there (sion-backup#23, #24)
+  apply as they are: a draft has no tag yet, so it is found by id
   and `tag_name`, not `gh release view vX`; GitHub allows several drafts with
   one tag, so a re-run deletes stale drafts and refuses an already-published
   one; a re-run uses the workflow file from its own commit, so a fix to the
@@ -215,6 +222,24 @@ As in sion-backup, hand-rolled with `make` and `gh`, no GoReleaser:
 - **Gates exit 0 (pass), 1 (the release is wrong: block) or 2 (the gate
   couldn't run: warn and publish)**, and never pass silently when they could
   not look (sion-backup#23, #27).
+- **The gates, as built**:
+  1. The checks again on the merged commit (`make lint`, `make test-unit`).
+  2. `SHA256SUMS.sig` verifies against the committed `release-key.pub`, so
+     the secret is the committed key's pair.
+  3. Every binary carries the release key: the Linux one's `version` ends
+     with `scripts/releasekey fingerprint`, and the Windows one contains
+     `release-key.pub`'s text.
+  4. `make selfupdate-e2e`, every case, with a throwaway key.
+  5. **The previous release updates to this one**: the previous published
+     Linux binary, as downloaded, against a fake GitHub serving this
+     release signed with the real key, by `update` and by itself while
+     running (`scripts/selfupdate-e2e/run --previous --candidate --key`).
+     Skipped with a warning on the first release.
+  6. The draft carries every file in `dist/`.
+- **The version** is worked out by `scripts/releaseversion` from the latest
+  published release and the merged pull request's labels; a commit already
+  released is not released again on a re-run, and any failure to ask GitHub
+  but a 404 stops the release rather than restart at v0.1.0.
 
 ## Checks on every pull request
 

@@ -1,0 +1,27 @@
+0 g BT /F1 9.5 Tf 504.567 720.283 Td (November 20, 2026) Tj ET
+0 g BT /F1 10 Tf 76.535 685.984 Td (Payee A Plumbing) Tj ET
+0 g BT /F1 10 Tf 503.15 684.283 Td (*********1,234.50) Tj ET
+0 g BT /F1 10 Tf 25.512 661.323 Td (One thousand two hundred thirty-four and 50/100 ****************************************************) Tj ET
+0 g BT /F1 10 Tf 58.11 592.724 Td (Kitchen drain repair) Tj ET
+0.35 g BT /F1 8 Tf 36.85 497.48 Td (Date) Tj ET
+0 g BT /F1 10 Tf 93.543 497.48 Td (November 20, 2026) Tj ET
+0.35 g BT /F1 8 Tf 396.85 497.48 Td (Amount) Tj ET
+0 g BT /F1 10 Tf 453.543 497.48 Td ($1,234.50) Tj ET
+0.35 g BT /F1 8 Tf 36.85 477.638 Td (Pay to) Tj ET
+0 g BT /F1 10 Tf 93.543 477.638 Td (Payee A Plumbing) Tj ET
+0.35 g BT /F1 8 Tf 36.85 457.795 Td (Memo) Tj ET
+0 g BT /F1 10 Tf 93.543 457.795 Td (Kitchen drain repair) Tj ET
+0.35 g BT /F1 8 Tf 36.85 432.283 Td (Note) Tj ET
+0 g BT /F1 10 Tf 93.543 432.283 Td (Invoice 8812) Tj ET
+0 g BT /F1 10 Tf 93.543 416.693 Td (Visits on Nov 3, 10, 17 and 24) Tj ET
+0.35 g BT /F1 8 Tf 36.85 245.48 Td (Date) Tj ET
+0 g BT /F1 10 Tf 93.543 245.48 Td (November 20, 2026) Tj ET
+0.35 g BT /F1 8 Tf 396.85 245.48 Td (Amount) Tj ET
+0 g BT /F1 10 Tf 453.543 245.48 Td ($1,234.50) Tj ET
+0.35 g BT /F1 8 Tf 36.85 225.638 Td (Pay to) Tj ET
+0 g BT /F1 10 Tf 93.543 225.638 Td (Payee A Plumbing) Tj ET
+0.35 g BT /F1 8 Tf 36.85 205.795 Td (Memo) Tj ET
+0 g BT /F1 10 Tf 93.543 205.795 Td (Kitchen drain repair) Tj ET
+0.35 g BT /F1 8 Tf 36.85 180.283 Td (Note) Tj ET
+0 g BT /F1 10 Tf 93.543 180.283 Td (Invoice 8812) Tj ET
+0 g BT /F1 10 Tf 93.543 164.693 Td (Visits on Nov 3, 10, 17 and 24) Tj ET

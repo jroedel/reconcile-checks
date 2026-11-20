@@ -1,0 +1,150 @@
+# The Walmart Checks voucher check: one check per letter page, in the top
+# position, with two stubs below it, separated by perforations
+# (docs/04-stock-and-layout.md). The bank's name, the account holder, the
+# check number (on the face and on both stubs) and the MICR line are
+# pre-printed; nothing here prints them.
+#
+# Every position is in millimetres from the top-left corner of the sheet, and
+# a text's position is its baseline: the line its letters sit on, a little
+# above the printed rule, never on it.
+#
+# Measured on 2026-11-20 from a 300 dpi scan of a blank page, straightened by
+# 0.24 degrees, with the first perforation taken as 88.9 mm (3.5 in) from the
+# top of the sheet and the scan's left edge as the sheet's.
+# PROVISIONAL until both are confirmed with a ruler on the paper
+# (docs/04, "Open questions"), and until a calibration page has been held
+# against a real check. The offsets in a computer's own settings correct its
+# printer; this file describes the paper and is corrected only when the
+# paper was measured wrong.
+
+name = "Walmart voucher check, top"
+
+size = 10.0       # points: the size every field is printed at, when it fits
+min_size = 8.0    # points: the smallest a field may shrink to before it is refused
+
+[page]
+width = 215.9     # letter
+height = 279.4
+
+# The check itself, as its image shows it: down to the first perforation.
+[face]
+x = 0.0
+y = 0.0
+width = 215.9
+height = 88.9
+
+# --- what is printed on the check ---------------------------------------------
+
+[fields.date]       # above the short rule at the top right (rule at 26.4)
+x = 178.0
+baseline = 25.3
+width = 31.0
+
+[fields.payee]      # after "PAY TO THE ORDER OF", on the rule that ends in a tick at 168.0 (rule at 38.5)
+x = 27.0
+baseline = 37.4
+width = 139.0
+
+[fields.amount]     # after the printed "$" (173.2-175.7); there is no box, the figures stand on the payee rule's level
+x = 177.5
+baseline = 38.0
+width = 33.0
+
+[fields.words]      # on the dollars rule, which runs from 8.2 to "DOLLARS" at 197.8 (rule at 47.2)
+x = 9.0
+baseline = 46.1
+width = 186.5
+
+[fields.memo]       # after the printed "MEMO" (10.0-17.8); the stock prints no memo rule. Ends before the signature rule at 135.0
+x = 20.5
+baseline = 70.3
+width = 110.0
+
+# --- the stubs ----------------------------------------------------------------
+#
+# Each stub begins at a perforation. Its first few millimetres carry the
+# pre-printed header (the account holder's name, and the check number at the
+# right, about 2.2 to 6.4 mm below the perforation); what is printed starts
+# below it. Positions within a stub are from its top.
+
+[[stubs]]
+top = 88.9
+
+[[stubs]]
+top = 177.8
+
+[stub]
+label_size = 8.0
+
+[stub.date]
+label = "Date"
+label_x = 13.0
+x = 33.0
+baseline = 15.0
+width = 80.0
+
+[stub.amount]
+label = "Amount"
+label_x = 140.0
+x = 160.0
+baseline = 15.0
+width = 45.0
+
+[stub.payee]
+label = "Pay to"
+label_x = 13.0
+x = 33.0
+baseline = 22.0
+width = 172.0
+
+[stub.memo]
+label = "Memo"
+label_x = 13.0
+x = 33.0
+baseline = 29.0
+width = 172.0
+
+[stub.note]
+label = "Note"
+label_x = 13.0
+x = 33.0
+baseline = 38.0
+width = 172.0
+lines = 6       # at most
+gap = 5.5       # between lines
+
+# --- the stock, drawn on the image only ------------------------------------------
+#
+# Never printed: the paper already has all of this. It is drawn into the
+# picture of the check sent to Reconcile and shown as the live preview, so
+# that the words sit in the shape of a check rather than float on white
+# (docs/07-the-image.md).
+
+[stock]
+frame = { x = 3.4, y = 2.4, width = 210.1, height = 82.9 }
+
+lines = [
+  { x1 = 177.1, y1 = 26.4, x2 = 209.2, y2 = 26.4 },  # the date
+  { x1 = 23.2,  y1 = 38.5, x2 = 168.0, y2 = 38.5 },  # pay to the order of
+  { x1 = 168.0, y1 = 33.9, x2 = 168.0, y2 = 38.5 },  # the tick at its end
+  { x1 = 8.2,   y1 = 47.2, x2 = 195.8, y2 = 47.2 },  # the dollars
+  { x1 = 135.0, y1 = 70.0, x2 = 207.6, y2 = 70.0 },  # the signature
+]
+
+labels = [
+  { s = "PAY TO THE",           x = 8.1,   baseline = 35.6, size = 6.5 },
+  { s = "ORDER OF",             x = 8.1,   baseline = 38.4, size = 6.5 },
+  { s = "$",                    x = 173.2, baseline = 38.2, size = 13.0 },
+  { s = "DOLLARS",              x = 197.8, baseline = 47.3, size = 7.0 },
+  { s = "MEMO",                 x = 10.0,  baseline = 70.3, size = 7.0 },
+  { s = "AUTHORIZED SIGNATURE", x = 158.0, baseline = 72.6, size = 6.0 },
+]
+
+# The pre-printed check number, drawn on the image at its place on the paper,
+# and on each stub's header (from the stub's top) in the full-page preview.
+number = { x = 195.3, baseline = 11.2, size = 13.0 }
+stub_number = { x = 195.2, baseline = 5.4, size = 13.0 }
+
+# The account, as XXXXXX and its last four, where the MICR line is: never the
+# full number, which this program does not know (docs/04, "Account numbers").
+account = { x = 120.0, baseline = 81.5, size = 11.0 }

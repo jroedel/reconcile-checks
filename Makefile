@@ -140,7 +140,16 @@ test-unit: ## Run unit tests, with the race detector
 	@GO=$(GO) scripts/go-test -race ./...
 
 .PHONY: test
-test: test-unit lint ## Full local check: unit tests + lint
+test: test-unit lint ## Full local check: unit tests + lint (the golden tests are among the unit tests)
+
+.PHONY: golden
+golden: ## Rewrite the golden files of the check's layout, on purpose (say in the PR what moved)
+	@# A golden that changed is a check that prints somewhere else. Run this
+	@# only for a change that was meant, and look at the difference before
+	@# committing it: the paper's and the calibration page's drawing commands
+	@# are text, and show every position that moved.
+	$(GO) test ./business/domain/layout/... -run Golden -update
+	@git --no-pager diff --stat -- '*/testdata/*' || true
 
 .PHONY: cover
 cover: ## Unit tests with a coverage summary

@@ -139,6 +139,11 @@ func TestTheGates(t *testing.T) {
 		{"launch with the wrong key", req{method: "POST", path: "/launch", form: url.Values{"key": {base64.RawURLEncoding.EncodeToString([]byte("wrong"))}}}, http.StatusForbidden},
 		{"launch from another website, even with the key", req{method: "POST", path: "/launch", site: "cross-site", origin: "https://evil.example", form: url.Values{"key": {base64.RawURLEncoding.EncodeToString(f.keys.Launch)}}}, http.StatusForbidden},
 		{"open with a token never made", req{method: "GET", path: "/open?k=nonsense"}, http.StatusForbidden},
+		{"a preview with the session", req{method: "GET", path: "/preview.png?payee=Payee+A&amount=12.50", session: true}, http.StatusOK},
+		{"a whole-page preview", req{method: "GET", path: "/preview.png?payee=Payee+A&amount=12.50&whole=1", session: true}, http.StatusOK},
+		{"a preview without the session", req{method: "GET", path: "/preview.png?payee=Payee+A"}, http.StatusUnauthorized},
+		{"a preview of an amount that isn't one", req{method: "GET", path: "/preview.png?amount=12.345", session: true}, http.StatusUnprocessableEntity},
+		{"a preview of a payee too long", req{method: "GET", path: "/preview.png?amount=1&payee=" + strings.Repeat("x", 300), session: true}, http.StatusUnprocessableEntity},
 	}
 
 	for _, c := range cases {

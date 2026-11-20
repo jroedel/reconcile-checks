@@ -1,4 +1,6 @@
 {{define "title"}}Write a check · Reconcile Checks{{end}}
+{{define "scripts"}}<script type="module" src="{{asset "write.mjs"}}"></script>
+{{end}}
 {{define "content"}}
 {{with .Data}}
 <h1>Write a check</h1>
@@ -32,7 +34,7 @@
 <div class="field">
 <label for="number">Check no.</label>
 <input type="text" id="number" name="number" value="{{.Form.Number}}" inputmode="numeric" required autocomplete="off"{{if eq .Field "number"}} aria-invalid="true" autofocus{{end}}>
-<p class="hint">{{if .Proposal.Last}}The last on this account: {{range $i, $n := .Proposal.Last}}{{if $i}}, {{end}}{{$n}}{{end}}. {{end}}Make sure it is the number on the next check in the tray.</p>
+<p class="hint"><span id="last">{{if .Proposal.Last}}The last on this account: {{range $i, $n := .Proposal.Last}}{{if $i}}, {{end}}{{$n}}{{end}}. {{end}}</span>Make sure it is the number on the next check in the tray.</p>
 </div>
 
 <div class="field">
@@ -80,6 +82,7 @@
 <figure class="preview">
 <img id="preview" alt="The check as it will be printed" src="{{.Preview}}">
 <figcaption class="hint">The check as it will print. <a href="{{.PreviewWhole}}" id="preview-whole">The whole page, with both stubs</a></figcaption>
+<p class="notice" id="preview-problem" role="status" hidden></p>
 </figure>
 </div>
 {{end}}

@@ -57,6 +57,27 @@ jobs:
           sudo apt-get install -y -qq --no-install-recommends cups-ipp-utils
           make ipp-interop
 
+      # The pages' scripts are plain JavaScript modules with no build step, so
+      # nothing else would notice one breaking until a check was being
+      # written. Node's own test runner, so there is nothing to install from
+      # npm; Node itself is pinned, because the browser tests need 22 or
+      # later. The SHA is the one stewards uses.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      - name: JavaScript tests
+        run: make test-js
+
+      # In the runner's own Chrome, against the program built from this
+      # commit, on a test config whose printer is a folder: the preview and
+      # the Print button following the typing, and a check written, printed
+      # and confirmed, under the real header policy. CI is set here, so a
+      # missing Chrome fails this step rather than skipping it.
+      - name: browser tests
+        timeout-minutes: 10
+        run: make test-browser
+
       - name: every target system builds
         run: make cross
 

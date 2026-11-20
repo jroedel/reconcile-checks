@@ -1,5 +1,7 @@
 {{define "title"}}Printing check {{.Data.Check.Number}} · Reconcile Checks{{end}}
-{{define "head"}}{{if .Data.Refresh}}<meta http-equiv="refresh" content="2">{{end}}{{end}}
+{{define "head"}}{{if .Data.Refresh}}<noscript><meta http-equiv="refresh" content="2"></noscript>{{end}}{{end}}
+{{define "scripts"}}<script type="module" src="{{asset "printing.mjs"}}"></script>
+{{end}}
 {{define "content"}}
 {{with .Data}}
 <h1>Check {{.Check.Number}}</h1>
@@ -10,7 +12,7 @@
 {{else if .Asked}}
 <p class="notice" role="alert">{{.Asked}}</p>
 {{else if .Sent.Job}}
-<p class="notice{{if eq .Status.State "completed"}} ok{{end}}" role="status">{{.Sent.Printer}}: {{.State}}</p>
+<p class="notice{{if eq .Status.State "completed"}} ok{{end}}" role="status" id="job-status"{{if .Refresh}} data-url="{{.JobURL}}" data-printer="{{.Sent.Printer}}"{{end}}>{{.Sent.Printer}}: {{.State}}</p>
 {{end}}
 
 <h2>Did it print correctly?</h2>

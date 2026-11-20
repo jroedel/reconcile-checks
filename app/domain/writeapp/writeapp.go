@@ -208,6 +208,7 @@ type printingView struct {
 	Next      int
 	Self      string
 	State     string // the job's state, as a person reads it
+	JobURL    string // where the page's script asks for it
 }
 
 // Printing follows the job and asks whether it printed correctly.
@@ -244,6 +245,8 @@ func (a *App) Printing(w http.ResponseWriter, r *http.Request) {
 
 		st, err := a.cfg.Print.Status(ctx, sent)
 		v.Status, v.Asked, v.State = st, sentence(err), stateText(st)
+		v.JobURL = fmt.Sprintf("/checks/%s/%d/job?%s", url.PathEscape(c.Account), c.Number,
+			url.Values{"printer": {sent.Printer}, "job": {strconv.Itoa(sent.Job)}}.Encode())
 
 		// Without a script, the page asks again by reloading itself, until
 		// the printer says the job is done or two minutes have passed.

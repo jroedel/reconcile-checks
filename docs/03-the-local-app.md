@@ -47,8 +47,11 @@ file is mode 0600; on Windows it is protected by living in the user's own
 ## When it closes
 
 The open page keeps one connection to the server (server-sent events), which
-the server also uses to tell the page what is happening: the print job's
-state, a check sent, an update waiting.
+the server can also use to tell the page what is happening: an update
+waiting, a check sent. The print job's state is asked for instead, by the
+printing page, every second and a half while the job is under way (or by
+the page reloading itself, without the script): one page asks about one
+job, so there is nothing to push.
 
 **The server exits when no page has been connected for two minutes**
 (decided 2026-11-20), and

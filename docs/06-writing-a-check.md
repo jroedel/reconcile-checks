@@ -136,7 +136,7 @@ the checks outstanding. Reconcile refuses to void a check that has already
 cleared, and the page says so. Stopping payment is between the person and
 the bank; the program only records it.
 
-A check is never deleted from the register, and its number is never reused.
+A check printed is never deleted from the register, and its number is never reused.
 
 ## The register
 
@@ -149,7 +149,8 @@ One row per check printed, in SQLite ([02](02-architecture.md)):
 | written on | The date on the check, as text, `YYYY-MM-DD`: a date, not a moment |
 | payee, amount (cents), memo, stub note | As printed |
 | state | `printing` from the press of Print until "Did it print correctly?" is answered, then `printed` or `void` |
-| printed at | Unix milliseconds |
+| created at | The press of Print, Unix milliseconds |
+| printed at | "Yes, it printed correctly", Unix milliseconds |
 | voided at, void reason | Empty unless voided |
 | reprint of | The number this check replaced, after a void |
 | sent at, void sent at | Empty until Reconcile has it |
@@ -167,6 +168,11 @@ ever signed in to Reconcile, so the register and the `checks/<account>/`
 folders name an account by a short key this computer gave it ("checking-a"),
 and Settings maps each key to Reconcile's id once signed in. Nothing is
 renamed when that happens.
+
+**A check is never deleted from the register**, with one exception: a
+check that never reached the printer. If its PDF and image can't be saved,
+or the printer refuses the job outright or can't be reached, the number is
+given back, since no paper carries it.
 
 **A check left `printing`** (the program closed or crashed before the
 question was answered) is asked about again when the program next opens. An

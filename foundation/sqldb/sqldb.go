@@ -259,20 +259,30 @@ func safeIdentifier(s string) bool {
 }
 
 // sqliteConstraintUnique is SQLITE_CONSTRAINT_UNIQUE, raised by a UNIQUE index
-// or column. Written out rather than imported from modernc.org/sqlite/lib,
-// which is the whole translated library and a heavy import for one integer.
-const sqliteConstraintUnique = 2067
+// or column, and sqliteConstraintPrimaryKey is SQLITE_CONSTRAINT_PRIMARYKEY,
+// raised by a PRIMARY KEY that is not a rowid alias. Written out rather than
+// imported from modernc.org/sqlite/lib, which is the whole translated library
+// and a heavy import for two integers.
+const (
+	sqliteConstraintUnique     = 2067
+	sqliteConstraintPrimaryKey = 1555
+)
 
-// IsUniqueViolation reports whether a write lost to a UNIQUE constraint.
+// IsUniqueViolation reports whether a write lost to a UNIQUE constraint or a
+// primary key, which is one.
 //
 // This is how a store makes "is this name free?" and "take it" one statement:
 // the insert is the check, so two checks claiming the same number at once
 // cannot both be told they were first. Read from the numeric code and never
 // from the message; the text is not API and has changed between releases.
+//
+// The primary key's code is here because the register's key is (account,
+// number), and SQLite reports a clash on it as 1555, not 2067: the sibling
+// projects' keys are all UNIQUE indexes or rowids, so they never met it.
 func IsUniqueViolation(err error) bool {
 	e, ok := errors.AsType[*sqlite.Error](err)
 
-	return ok && e.Code() == sqliteConstraintUnique
+	return ok && (e.Code() == sqliteConstraintUnique || e.Code() == sqliteConstraintPrimaryKey)
 }
 
 // sqliteConstraintForeignKey is SQLITE_CONSTRAINT_FOREIGNKEY.

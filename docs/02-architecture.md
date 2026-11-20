@@ -129,9 +129,11 @@ name = "Office M612"
 url  = "ipps://NPI46CBDF.local:631/ipp/print"   # "file:<dir>" in development
 
 [[account]]
-id      = "…"            # Reconcile's id for the account
+key     = "checking-a"   # this computer's key for it: the register and checks/<key>/ (06)
+reconcile_id = "…"       # Reconcile's id, set by Settings once signed in (08)
 name    = "Checking A"   # as Reconcile names it
 last4   = "1234"
+ceiling = "10000.00"     # above it, an amount is asked about again (04)
 stock   = "walmart-voucher-top"   # which layout
 printer = "Office M612"
 tray    = "tray-1"                # the printer's media-source for the checks

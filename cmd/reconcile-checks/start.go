@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
@@ -24,6 +25,7 @@ import (
 	"github.com/jroedel/reconcile-checks/app/sdk/muxer"
 	"github.com/jroedel/reconcile-checks/app/sdk/page"
 	"github.com/jroedel/reconcile-checks/app/sdk/presence"
+	"github.com/jroedel/reconcile-checks/business/domain/check/stores/checkdb"
 	"github.com/jroedel/reconcile-checks/foundation/browser"
 	"github.com/jroedel/reconcile-checks/foundation/lockfile"
 	"github.com/jroedel/reconcile-checks/foundation/logger"
@@ -124,7 +126,7 @@ func start(opt options, stdout, stderr io.Writer) error {
 		Render:     render,
 		Presence:   tracker,
 		DB:         db,
-		Schema:     sqldb.Infrastructure,
+		Schema:     schema,
 		Quit:       quit,
 		ConfigFile: cfg.file,
 		DataDir:    cfg.Data,
@@ -166,9 +168,20 @@ func takeLock(data string, wait time.Duration) (*lockfile.Lock, error) {
 	}
 }
 
-// openRegister opens the register and checks its schema. In this first
-// version it holds only the schema's own bookkeeping; the checks arrive with
-// the register's store (docs/06-writing-a-check.md, "The register").
+// schema is every table the register must have, and the columns this version
+// reads from each: checked at start, and on every /healthz an update restart
+// asks.
+var schema = func() sqldb.Expected {
+	all := sqldb.Expected{}
+	maps.Copy(all, sqldb.Infrastructure)
+	maps.Copy(all, checkdb.Expected)
+
+	return all
+}()
+
+// openRegister opens the register, creates what a new one lacks, and checks
+// that its schema is one this version can read (docs/06-writing-a-check.md,
+// "The register").
 func openRegister(data string) (*sql.DB, error) {
 	path := filepath.Join(data, "register.db")
 
@@ -184,12 +197,17 @@ func openRegister(data string) (*sql.DB, error) {
 		return nil, fmt.Errorf("opening the register: %w", err)
 	}
 
+	if err := checkdb.Init(ctx, d); err != nil {
+		d.Close()
+		return nil, fmt.Errorf("opening the register: %w", err)
+	}
+
 	if err := sqldb.Restrict(path); err != nil {
 		d.Close()
 		return nil, err
 	}
 
-	if err := sqldb.CheckSchema(ctx, d, sqldb.Infrastructure); err != nil {
+	if err := sqldb.CheckSchema(ctx, d, schema); err != nil {
 		d.Close()
 		return nil, fmt.Errorf("the register is not one this version can read: %w", err)
 	}

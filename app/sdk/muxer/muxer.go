@@ -36,14 +36,16 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/jroedel/reconcile-checks/app/domain/homeapp"
+	"github.com/jroedel/reconcile-checks/app/domain/checksapp"
 	"github.com/jroedel/reconcile-checks/app/domain/launchapp"
 	"github.com/jroedel/reconcile-checks/app/domain/previewapp"
 	"github.com/jroedel/reconcile-checks/app/domain/settingsapp"
+	"github.com/jroedel/reconcile-checks/app/domain/writeapp"
 	"github.com/jroedel/reconcile-checks/app/sdk/health"
 	"github.com/jroedel/reconcile-checks/app/sdk/mid"
 	"github.com/jroedel/reconcile-checks/app/sdk/page"
 	"github.com/jroedel/reconcile-checks/app/sdk/presence"
+	"github.com/jroedel/reconcile-checks/business/domain/check/checkbus"
 	"github.com/jroedel/reconcile-checks/business/domain/print/printbus"
 	"github.com/jroedel/reconcile-checks/business/domain/settings/settingsbus"
 	"github.com/jroedel/reconcile-checks/foundation/sqldb"
@@ -87,6 +89,7 @@ type Config struct {
 	Settings *settingsbus.Business
 	Print    *printbus.Business
 	Finder   settingsapp.Finder
+	Checks   *checkbus.Business
 }
 
 // DefaultStock is the one stock this program knows today.
@@ -99,7 +102,12 @@ func New(cfg Config) (http.Handler, error) {
 		return nil, err
 	}
 
-	home, err := homeapp.New(homeapp.Config{Render: cfg.Render})
+	write, err := writeapp.New(writeapp.Config{Render: cfg.Render, Checks: cfg.Checks, Print: cfg.Print, Settings: cfg.Settings})
+	if err != nil {
+		return nil, err
+	}
+
+	checks, err := checksapp.New(checksapp.Config{Render: cfg.Render, Checks: cfg.Checks})
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +124,7 @@ func New(cfg Config) (http.Handler, error) {
 		return nil, err
 	}
 
-	preview, err := previewapp.New(previewapp.Config{Stock: cmp.Or(cfg.Stock, DefaultStock)})
+	preview, err := previewapp.New(previewapp.Config{Stock: cmp.Or(cfg.Stock, DefaultStock), Accounts: cfg.Settings})
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +132,17 @@ func New(cfg Config) (http.Handler, error) {
 	// The routes behind the session. Every write among them is checked for
 	// where it came from.
 	app := http.NewServeMux()
-	app.HandleFunc("GET /{$}", home.Home)
+	app.HandleFunc("GET /{$}", write.Write)
+	app.HandleFunc("POST /checks", write.Print)
+	app.HandleFunc("GET /checks/{account}/{number}/printing", write.Printing)
+	app.HandleFunc("POST /checks/{account}/{number}/printed", write.Printed)
+	app.HandleFunc("POST /checks/{account}/{number}/reprint", write.Reprint)
+
+	app.HandleFunc("GET /checks", checks.List)
+	app.HandleFunc("GET /checks/{account}/{number}", checks.Check)
+	app.HandleFunc("GET /checks/{account}/{number}/image.png", checks.Image)
+	app.HandleFunc("POST /checks/{account}/{number}/void", checks.Void)
+	app.HandleFunc("POST /checks/{account}/{number}/renumber", checks.Renumber)
 	app.HandleFunc("GET /settings", settings.Settings)
 	app.HandleFunc("GET /settings/printers/find", settings.Find)
 	app.HandleFunc("POST /settings/printers", settings.AddPrinter)

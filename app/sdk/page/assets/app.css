@@ -252,3 +252,41 @@ form.inline { display: inline-block; margin: 0 0.5rem 0.5rem 0; }
 .facts { display: grid; grid-template-columns: max-content 1fr; gap: 0.35rem 1.25rem; margin: 0 0 var(--gap); }
 .facts dt { color: var(--muted); }
 .facts dd { margin: 0; }
+
+/*
+ * Write a check: the form beside the check it makes, on a desk, where the
+ * printer is (docs/12-look-and-voice.md, "desk first"); one above the other
+ * on a narrow window. The preview is the check as it will print, so it is
+ * drawn on white in the dark scheme too.
+ */
+main:has(.write) { max-width: 72rem; }
+.write { display: grid; gap: calc(var(--gap) * 2); align-items: start; }
+@media (min-width: 60rem) {
+	.write { grid-template-columns: minmax(18rem, 26rem) 1fr; }
+	.write .preview { position: sticky; top: var(--gap); }
+}
+.preview { margin: 0; }
+.preview img {
+	display: block;
+	width: 100%;
+	height: auto;
+	background: #fff;
+	border: 1px solid var(--line);
+	border-radius: calc(var(--radius) / 2);
+}
+.preview img.stale { opacity: 0.5; }
+textarea { min-height: 4.5rem; resize: vertical; }
+[aria-invalid="true"] { border-color: var(--warn-line); outline: 2px solid var(--warn-line); }
+fieldset { border: 0; padding: 0; margin: 0 0 var(--gap); }
+fieldset label { font-weight: 400; }
+legend { font-weight: 600; margin-bottom: 0.25rem; }
+
+/* The register. */
+main:has(.register) { max-width: 72rem; }
+.register { width: 100%; border-collapse: collapse; margin-bottom: var(--gap); }
+.register th, .register td { text-align: left; padding: 0.45rem 0.6rem 0.45rem 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+.register th { color: var(--muted); font-weight: 600; }
+.register .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.register tr.void td { color: var(--muted); text-decoration: line-through; }
+.register tr.void td:last-child { text-decoration: none; }
+a[aria-current="page"] { font-weight: 700; color: var(--ink); text-decoration: none; }

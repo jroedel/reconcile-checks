@@ -238,6 +238,23 @@ func TestTooManyStubNoteLinesAreRefused(t *testing.T) {
 	}
 }
 
+// A form with no amount yet previews without one: never a check for zero.
+func TestNoAmountYetDrawsNoAmount(t *testing.T) {
+	c := sample()
+	c.Amount = 0
+
+	doc, err := load(t).Preview(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, it := range doc.Items {
+		if tx, ok := it.(render.Text); ok && (strings.Contains(tx.S, "0.00") || strings.HasPrefix(tx.S, "Zero")) {
+			t.Errorf("a preview with no amount says %q", tx.S)
+		}
+	}
+}
+
 func TestTheImageIsTheFaceAndSaysVoid(t *testing.T) {
 	l := load(t)
 

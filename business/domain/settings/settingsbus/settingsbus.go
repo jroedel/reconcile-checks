@@ -137,8 +137,18 @@ func (b *Business) CheckAccount(key string) (checkbus.Account, error) {
 		return checkbus.Account{}, err
 	}
 
-	return checkbus.Account{Key: a.Key, Last4: a.Last4, Stock: a.Stock, Ceiling: a.Ceiling}, nil
+	return checkbus.Account{
+		Key: a.Key, Last4: a.Last4, Stock: a.Stock, Ceiling: a.Ceiling,
+		OffsetX: a.Offset.X, OffsetY: a.Offset.Y,
+	}, nil
 }
+
+// ForChecks is the settings as the register's checkbus.Accounts.
+func (b *Business) ForChecks() checkbus.Accounts { return forChecks{b} }
+
+type forChecks struct{ b *Business }
+
+func (f forChecks) Account(key string) (checkbus.Account, error) { return f.b.CheckAccount(key) }
 
 // SavePrinter adds a printer, or replaces the one called was. A printer
 // renamed takes its accounts with it.

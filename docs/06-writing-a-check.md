@@ -109,6 +109,22 @@ Printed on tray 1.  Did it print correctly?
 [ Yes ]   [ No — void it and reprint on 1044 ]
 ```
 
+Two things can happen before that question, and both leave the register
+telling the truth:
+
+- **The printer refuses the job, or can't be reached, before it is sent**
+  (a tray it doesn't have, an option it won't honour, the printer off):
+  nothing printed, so the number is given back and the form stays as typed,
+  with the printer's reason.
+- **The printer stops answering after the job was sent**: it may or may not
+  have printed. The check stays in the register, and the page says to look
+  at the tray, then asks the same question.
+
+The page follows the job by reloading itself every two seconds, until the
+printer says it is done or two minutes have passed. The page's script does
+the same without the reloads. Either way the question is there from the
+start: the person's eye is the check.
+
 - **Yes**: the check is final. Its image is sent to Reconcile at once, or
   saved to send later ([07](07-the-image.md)). The form clears for the next
   check, keeping the account and proposing the next number.

@@ -40,6 +40,21 @@ func (f *Files) Path(account string, number int, ext string) (string, error) {
 	return filepath.Join(f.dir, account, strconv.Itoa(number)+"."+ext), nil
 }
 
+// Read is one of a check's files.
+func (f *Files) Read(account string, number int, ext string) ([]byte, error) {
+	p, err := f.Path(account, number, ext)
+	if err != nil {
+		return nil, err
+	}
+
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return nil, fmt.Errorf("reading check %d's %s file: %w", number, ext, err)
+	}
+
+	return b, nil
+}
+
 // Save writes both files.
 func (f *Files) Save(account string, number int, pdf, png []byte) error {
 	if err := f.write(account, number, "pdf", pdf); err != nil {

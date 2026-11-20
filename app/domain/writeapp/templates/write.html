@@ -1,0 +1,87 @@
+{{define "title"}}Write a check · Reconcile Checks{{end}}
+{{define "content"}}
+{{with .Data}}
+<h1>Write a check</h1>
+{{if .Notice}}<p class="notice ok" role="status">{{.Notice}}</p>{{end}}
+{{if .Error}}<p class="notice" role="alert">{{.Error}}</p>{{end}}
+
+{{range .Left}}
+<p class="notice" role="alert">Check {{.Number}} to {{.Payee}} was sent to the printer, and nobody said whether it printed correctly. <a href="/checks/{{.Account}}/{{.Number}}/printing">Say now</a>.</p>
+{{end}}
+
+{{if not .Accounts}}
+<p>This computer doesn't print checks on any account yet. <a href="/settings">Add a printer and an account in Settings</a>.</p>
+{{else}}
+<div class="write">
+<form method="post" action="/checks" class="write-form" id="write">
+<input type="hidden" name="form_token" value="{{$.FormToken}}">
+{{if .Form.ReprintOf}}<input type="hidden" name="reprint_of" value="{{.Form.ReprintOf}}">{{end}}
+
+{{if gt (len .Accounts) 1}}
+<div class="field">
+<label for="account">Account</label>
+<select id="account" name="account">
+{{range .Accounts}}<option value="{{.Key}}"{{if eq .Key $.Data.Account.Key}} selected{{end}}>{{.Name}} (ending {{.Last4}})</option>{{end}}
+</select>
+</div>
+{{else}}
+<input type="hidden" name="account" value="{{.Account.Key}}">
+<p class="hint">{{.Account.Name}}, ending {{.Account.Last4}}</p>
+{{end}}
+
+<div class="field">
+<label for="number">Check no.</label>
+<input type="text" id="number" name="number" value="{{.Form.Number}}" inputmode="numeric" required autocomplete="off"{{if eq .Field "number"}} aria-invalid="true" autofocus{{end}}>
+<p class="hint">{{if .Proposal.Last}}The last on this account: {{range $i, $n := .Proposal.Last}}{{if $i}}, {{end}}{{$n}}{{end}}. {{end}}Make sure it is the number on the next check in the tray.</p>
+</div>
+
+<div class="field">
+<label for="date">Date</label>
+<input type="date" id="date" name="date" value="{{.Form.Date}}" required{{if eq .Field "date"}} aria-invalid="true" autofocus{{end}}>
+</div>
+
+<div class="field">
+<label for="payee">Pay to</label>
+<input type="text" id="payee" name="payee" value="{{.Form.Payee}}" list="payees" required autocomplete="off"{{if eq .Field "payee"}} aria-invalid="true" autofocus{{end}}>
+<datalist id="payees">{{range .Payees}}<option value="{{.}}">{{end}}</datalist>
+</div>
+
+<div class="field">
+<label for="amount">Amount</label>
+<input type="text" id="amount" name="amount" value="{{.Form.Amount}}" inputmode="decimal" required autocomplete="off"{{if eq .Field "amount"}} aria-invalid="true" autofocus{{end}}>
+<p class="hint" id="words">{{.Words}}</p>
+</div>
+
+<div class="field">
+<label for="memo">Memo</label>
+<input type="text" id="memo" name="memo" value="{{.Form.Memo}}" autocomplete="off"{{if eq .Field "memo"}} aria-invalid="true" autofocus{{end}}>
+<p class="hint">What it is for: the accountants see it in Reconcile.</p>
+</div>
+
+<div class="field">
+<label for="stub_note">Stub note</label>
+<textarea id="stub_note" name="stub_note" rows="3"{{if eq .Field "stub_note"}} aria-invalid="true" autofocus{{end}}>{{.Form.StubNote}}</textarea>
+<p class="hint">Printed on both stubs: the detail the memo is too short for.</p>
+</div>
+
+{{if .Questions}}
+<div class="notice" role="alert">
+{{range .Questions}}<p>{{.Sentence}}</p>{{end}}
+{{range .Answered}}<input type="hidden" name="answered" value="{{.}}">{{end}}
+<button type="submit">Yes. {{.Summary}}</button>
+</div>
+{{else}}
+{{range .Answered}}<input type="hidden" name="answered" value="{{.}}">{{end}}
+<button type="submit" id="print">{{.Summary}}</button>
+{{end}}
+{{with .Account}}<p class="hint">On {{.Printer}}, {{.Tray}}{{if .Feed}}: {{.Feed}}{{end}}.</p>{{end}}
+</form>
+
+<figure class="preview">
+<img id="preview" alt="The check as it will be printed" src="{{.Preview}}">
+<figcaption class="hint">The check as it will print. <a href="{{.PreviewWhole}}" id="preview-whole">The whole page, with both stubs</a></figcaption>
+</figure>
+</div>
+{{end}}
+{{end}}
+{{end}}

@@ -87,6 +87,11 @@ type Account struct {
 	Last4   string
 	Stock   string      // the layout's name
 	Ceiling money.Cents // above it, an amount is asked about again
+
+	// OffsetX and OffsetY move the paper's ink to correct this computer's
+	// printer, in millimetres. The PDF kept is the one printed, so it carries
+	// them; the image doesn't (docs/07-the-image.md).
+	OffsetX, OffsetY float64
 }
 
 // DefaultCeiling is an account's ceiling unless the config says otherwise
@@ -195,6 +200,10 @@ type Storer interface {
 	// InState is every check in the state, oldest first.
 	InState(ctx context.Context, s State) ([]Check, error)
 
+	// Latest is the last n checks on every account, the most recently
+	// written first.
+	Latest(ctx context.Context, n int) ([]Check, error)
+
 	// Unsent is every check Reconcile doesn't have yet: printed or void and
 	// never sent, or void and the void never sent. Oldest first.
 	Unsent(ctx context.Context) ([]Check, error)
@@ -203,6 +212,7 @@ type Storer interface {
 // Files keeps each check's PDF and PNG (stores/checkfiles): the only copy of
 // the PDF ever, and of the image until Reconcile has it (docs/02).
 type Files interface {
+	Read(account string, number int, ext string) ([]byte, error)
 	Save(account string, number int, pdf, png []byte) error
 	SavePNG(account string, number int, png []byte) error
 	Rename(account string, from, to int) error
@@ -334,6 +344,20 @@ func (b *Business) Get(ctx context.Context, account string, number int) (Check, 
 	return b.store.Get(ctx, account, number)
 }
 
+// Latest is the last n checks on every account, the most recent first.
+func (b *Business) Latest(ctx context.Context, n int) ([]Check, error) {
+	return b.store.Latest(ctx, n)
+}
+
+// Image is the check's PNG, as Reconcile is sent it.
+func (b *Business) Image(ctx context.Context, account string, number int) ([]byte, error) {
+	if _, err := b.store.Get(ctx, account, number); err != nil {
+		return nil, err
+	}
+
+	return b.files.Read(account, number, "png")
+}
+
 // NewCheck is the form, as typed and confirmed.
 type NewCheck struct {
 	Account   string
@@ -351,8 +375,8 @@ type NewCheck struct {
 
 // Write claims the number and makes the check's PDF and image: what the press
 // of Print does before anything reaches the printer. It returns the PDF to
-// print, without the printer's offset, which is the caller's (it describes
-// the printer, not the check).
+// print, shifted by the account's offset, and keeps that same PDF: the only
+// copy there will be of what went to the printer (docs/02).
 //
 // The order is the point. Everything that can refuse the check, the questions
 // included, is asked before the number is taken; the number is taken in one
@@ -381,7 +405,7 @@ func (b *Business) Write(ctx context.Context, nc NewCheck) (Check, []byte, error
 		return Check{}, nil, err
 	}
 
-	pdf, err := render.PDF(paper)
+	pdf, err := render.PDF(paper.Shift(acct.OffsetX, acct.OffsetY))
 	if err != nil {
 		return Check{}, nil, err
 	}

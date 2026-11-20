@@ -26,7 +26,9 @@ import (
 	"github.com/jroedel/reconcile-checks/app/sdk/muxer"
 	"github.com/jroedel/reconcile-checks/app/sdk/page"
 	"github.com/jroedel/reconcile-checks/app/sdk/presence"
+	"github.com/jroedel/reconcile-checks/business/domain/check/checkbus"
 	"github.com/jroedel/reconcile-checks/business/domain/check/stores/checkdb"
+	"github.com/jroedel/reconcile-checks/business/domain/check/stores/checkfiles"
 	"github.com/jroedel/reconcile-checks/business/domain/print/printbus"
 	"github.com/jroedel/reconcile-checks/business/domain/settings/settingsbus"
 	"github.com/jroedel/reconcile-checks/business/domain/settings/stores/settingsfile"
@@ -135,7 +137,14 @@ func start(opt options, stdout, stderr io.Writer) error {
 		client.Dial = finder.Dialer(nil)
 	}
 
+	checks := checkbus.New(checkbus.Config{
+		Store:    checkdb.NewStore(db),
+		Files:    checkfiles.New(filepath.Join(cfg.Data, "checks")),
+		Accounts: settings.ForChecks(),
+	})
+
 	handler, err := muxer.New(muxer.Config{
+		Checks:     checks,
 		Settings:   settings,
 		Print:      printbus.New(settings, client),
 		Finder:     finder,

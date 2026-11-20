@@ -1,0 +1,36 @@
+{{define "title"}}Printing check {{.Data.Check.Number}} · Reconcile Checks{{end}}
+{{define "head"}}{{if .Data.Refresh}}<meta http-equiv="refresh" content="2">{{end}}{{end}}
+{{define "content"}}
+{{with .Data}}
+<h1>Check {{.Check.Number}}</h1>
+<p>To {{.Check.Payee}} for {{.Check.Amount}}.</p>
+
+{{if .Uncertain}}
+<p class="notice" role="alert">The printer stopped answering while the check was being sent, so it may or may not have printed. Look at the tray.</p>
+{{else if .Asked}}
+<p class="notice" role="alert">{{.Asked}}</p>
+{{else if .Sent.Job}}
+<p class="notice{{if eq .Status.State "completed"}} ok{{end}}" role="status">{{.Sent.Printer}}: {{.State}}</p>
+{{end}}
+
+<h2>Did it print correctly?</h2>
+<p>Check that it is the check numbered {{.Check.Number}}, that it came out straight, and that the words sit on their lines.</p>
+
+<form method="post" action="/checks/{{.Check.Account}}/{{.Check.Number}}/printed" class="inline">
+<input type="hidden" name="form_token" value="{{$.FormToken}}">
+<button type="submit">Yes</button>
+</form>
+
+<form method="post" action="/checks/{{.Check.Account}}/{{.Check.Number}}/reprint" class="field">
+<input type="hidden" name="form_token" value="{{$.FormToken}}">
+<fieldset>
+<legend>No: void it, and print it again{{if .Next}} on {{.Next}}{{end}}</legend>
+<label><input type="radio" name="reason" value="jam" checked> It jammed</label>
+<label><input type="radio" name="reason" value="misaligned"> It is crooked or misaligned</label>
+<label><input type="radio" name="reason" value="did not print"> Nothing came out</label>
+<label><input type="radio" name="reason" value="other"> Something else: <input type="text" name="other" aria-label="What went wrong"></label>
+</fieldset>
+<button type="submit" class="quiet">Void check {{.Check.Number}} and reprint</button>
+</form>
+{{end}}
+{{end}}

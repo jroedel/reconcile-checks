@@ -4,8 +4,10 @@
 
 Each checking account has its own stock, bought from the bank or a check
 printer, with the bank's name, the account holder, the check number and the
-MICR line already printed. So each account has its own layout, offsets, tray
-and number sequence, in the local config ([02](02-architecture.md)).
+MICR line already printed. So each account has its own layout and number
+sequence, in the local config ([02](02-architecture.md)). The tray and the
+offset are not the account's but the printer's, whichever account's stock is
+in it (below).
 
 **The stock** (decided 2026-11-20): ordered from Walmart Checks, **one
 check per page, in the top position**, laser stock, with **two perforated stubs below the check**. The exact
@@ -154,24 +156,26 @@ Table tests, at least: 0.05, 1.00, 1.10, 11.00, 13.00, 19.99, 21.00, 99.99,
 
 ## Alignment and calibration
 
-**Print calibration page** in Settings prints a calibration page **on plain
-paper**: the layout's boxes outlined, the stock's own rules, and numbered
-rulers along two edges. No corner crosses: a sheet's corners lie inside every
-printer's unprintable margin. It goes through the account's tray with exactly
-the options a check is printed with, shifted by the account's current
-offset, so it shows where this printer would put a check's ink now; so the
-checks come out of the tray first, and plain paper goes in. Held to the light against a real check, it shows how far off the
-printer is. The correction is an offset in the config, `x` and `y` in
-millimetres, applied to the whole page, **never edited into the layout**:
-the layout describes the stock, and the offset describes this printer. Each
-computer has its own offsets, since each prints on its own printer, or the
-same printer through a different tray.
+**Print the calibration page**, on a printer's page in Settings, prints a
+calibration page **on plain paper**: a stock's boxes outlined, the stock's
+own rules, and numbered rulers along two edges. No corner crosses: a sheet's
+corners lie inside every printer's unprintable margin. It goes through the
+printer's tray for checks with exactly the options a check is printed with,
+shifted by the printer's current offset, so it shows where this printer
+would put a check's ink now; so the checks come out of the tray first, and
+plain paper goes in. It needs no account, so a printer is checked before
+signing in to Reconcile; the page asks which stock to draw. Held to the light against a real check, it shows how far off the
+printer is. The correction is the printer's offset in the config, `x` and
+`y` in millimetres, applied to the whole page, **never edited into the
+layout**: the layout describes the stock, and the offset describes this
+printer, for every account's checks it prints. Each computer has its own
+offsets, since each prints on its own printer.
 
 Then one real check, by hand, from a dummy register, before the program is
 trusted with the account.
 
 Which way up the stock goes in the tray is settled once, with a plain sheet
-marked "top, this side up", and written in the account's `feed` in the config
+marked "top, this side up", and written in the printer's `feed` in the config
 and in [05](05-printing.md).
 
 ## This repository is public

@@ -58,6 +58,9 @@ close_after = "10m"
 [[printer]]
 name = "Test printer"
 url = ${JSON.stringify("file:" + printer.replaceAll("\\", "/"))}
+tray = "tray-1"
+media_type = "stationery-preprinted"
+feed = "face down, top edge in first"
 
 [[account]]
 key = "checking-a"
@@ -65,9 +68,6 @@ name = "Checking A"
 last4 = "1234"
 stock = "walmart-voucher-top"
 printer = "Test printer"
-tray = "tray-1"
-media_type = "stationery-preprinted"
-feed = "face down, top edge in first"
 `,
     );
 

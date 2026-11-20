@@ -27,7 +27,11 @@ func setup(t *testing.T, existing string) (*settingsbus.Business, string) {
 	return settingsbus.New(settingsfile.New(path)), path
 }
 
-var printer = settingsbus.Printer{Name: "Office M612", URL: "ipps://printer.local/ipp/print", Pin: strings.Repeat("ab", 32)}
+var printer = settingsbus.Printer{
+	Name: "Office M612", URL: "ipps://printer.local/ipp/print", Pin: strings.Repeat("ab", 32),
+	Tray: "tray-1", MediaType: "stationery-preprinted", Feed: "face down, top edge in first",
+	Offset: settingsbus.Offset{X: 0.4, Y: -0.6},
+}
 
 // An invented account. Never a real one (CLAUDE.md, "This repository is
 // public").
@@ -35,8 +39,6 @@ func account() settingsbus.Account {
 	return settingsbus.Account{
 		Key: "checking-a", Name: "Checking A", Last4: "1234",
 		Stock: "walmart-voucher-top", Printer: "Office M612",
-		Tray: "tray-1", MediaType: "stationery-preprinted", Feed: "face down, top edge in first",
-		Offset: settingsbus.Offset{X: 0.4, Y: -0.6},
 	}
 }
 
@@ -106,14 +108,11 @@ func TestAPrinterIsNamedAndReachedByIPP(t *testing.T) {
 
 func TestAnAccountIsRefusedWhatItCantPrintWith(t *testing.T) {
 	cases := map[string]func(*settingsbus.Account){
-		"key":        func(a *settingsbus.Account) { a.Key = "Checking A" },
-		"name":       func(a *settingsbus.Account) { a.Name = " " },
-		"last4":      func(a *settingsbus.Account) { a.Last4 = "123456789" },
-		"stock":      func(a *settingsbus.Account) { a.Stock = "no-such-stock" },
-		"printer":    func(a *settingsbus.Account) { a.Printer = "Another" },
-		"tray":       func(a *settingsbus.Account) { a.Tray = "" },
-		"media_type": func(a *settingsbus.Account) { a.MediaType = "" },
-		"offset":     func(a *settingsbus.Account) { a.Offset.Y = 12 },
+		"key":     func(a *settingsbus.Account) { a.Key = "Checking A" },
+		"name":    func(a *settingsbus.Account) { a.Name = " " },
+		"last4":   func(a *settingsbus.Account) { a.Last4 = "123456789" },
+		"stock":   func(a *settingsbus.Account) { a.Stock = "no-such-stock" },
+		"printer": func(a *settingsbus.Account) { a.Printer = "Another" },
 	}
 
 	for field, change := range cases {
@@ -149,14 +148,14 @@ func TestAnAccountsKeyIsKept(t *testing.T) {
 		t.Error("a second account with the same key was added")
 	}
 
-	a.Offset.X = 1.5
+	a.Name = "Checking A, operating"
 	if err := b.SaveAccount(a, false); err != nil {
 		t.Fatal(err)
 	}
 
 	got, _ := b.Account("checking-a")
-	if got.Offset.X != 1.5 {
-		t.Errorf("the offset is %g after an edit", got.Offset.X)
+	if got.Name != "Checking A, operating" {
+		t.Errorf("the name is %q after an edit", got.Name)
 	}
 
 	other := account()
@@ -213,46 +212,62 @@ func TestTheRegisterSeesTheAccount(t *testing.T) {
 	}
 }
 
-func TestAnAccountWithNoFeedIsGivenTheM612s(t *testing.T) {
+// The printer is set up and calibrated before any account exists: it is
+// refused only what can never print, and its offset is what every account on
+// it prints with.
+func TestAPrinterKeepsHowChecksGoThroughIt(t *testing.T) {
 	b, _ := setup(t, "")
+
+	far := printer
+	far.Offset.Y = 12
+	if inv, ok := errors.AsType[settingsbus.Invalid](b.SavePrinter("", far)); !ok || inv.Field != "offset" {
+		t.Errorf("an offset of 12 mm: %v", inv)
+	}
 
 	if err := b.SavePrinter("", printer); err != nil {
 		t.Fatal(err)
 	}
 
-	a := account()
-	a.Feed = ""
-
-	if err := b.SaveAccount(a, true); err != nil {
+	moved := printer
+	moved.Offset = settingsbus.Offset{X: 1.5, Y: 0}
+	if err := b.SavePrinter(printer.Name, moved); err != nil {
 		t.Fatal(err)
 	}
 
-	got, err := b.Account(a.Key)
+	if err := b.SaveAccount(account(), true); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := b.CheckAccount("checking-a")
+	if err != nil || got.OffsetX != 1.5 || got.OffsetY != 0 {
+		t.Errorf("the account prints with %+v (%v), not its printer's offset", got, err)
+	}
+}
+
+func TestAPrinterWithNothingSaidIsGivenTheM612s(t *testing.T) {
+	b, _ := setup(t, "")
+
+	if err := b.SavePrinter("", settingsbus.Printer{Name: "Office M612", URL: "ipp://printer.local/ipp/print"}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := b.Printer("Office M612")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// Spelled out as well as named: the default is the M612's answer
-	// (docs/05), and changing it should mean changing this line too.
-	if got.Feed != "face up, stubs in first" {
-		t.Errorf("feed %q, want the M612's, face up, stubs in first", got.Feed)
+	// Spelled out as well as named: the defaults are the M612's answers
+	// (docs/05), and changing them should mean changing this line too.
+	if got.Tray != "tray-1" || got.MediaType != "stationery-preprinted" || got.Feed != "face up, stubs in first" {
+		t.Errorf("printer %+v, want the M612's tray-1, stationery-preprinted, face up, stubs in first", got)
 	}
 }
 
-func TestAnAccountKeptWithNoFeedShowsTheDefault(t *testing.T) {
+func TestAPrinterKeptWithNothingSaidShowsTheDefaults(t *testing.T) {
 	b, _ := setup(t, `
 [[printer]]
 name = "Office M612"
 url = "ipps://printer.local/ipp/print"
-
-[[account]]
-key = "checking-a"
-name = "Checking A"
-last4 = "1234"
-stock = "walmart-voucher-top"
-printer = "Office M612"
-tray = "tray-1"
-media_type = "stationery-preprinted"
 `)
 
 	s, err := b.Settings()
@@ -260,7 +275,7 @@ media_type = "stationery-preprinted"
 		t.Fatal(err)
 	}
 
-	if len(s.Accounts) != 1 || s.Accounts[0].Feed != settingsbus.DefaultFeed {
-		t.Errorf("accounts %+v", s.Accounts)
+	if len(s.Printers) != 1 || s.Printers[0].Feed != settingsbus.DefaultFeed || s.Printers[0].Tray != settingsbus.DefaultTray {
+		t.Errorf("printers %+v", s.Printers)
 	}
 }

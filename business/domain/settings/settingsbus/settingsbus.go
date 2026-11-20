@@ -9,6 +9,7 @@
 package settingsbus
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"regexp"
@@ -21,12 +22,33 @@ import (
 	"github.com/jroedel/reconcile-checks/business/types/money"
 )
 
-// Printer is a printer this computer prints to.
+// Printer is a printer this computer prints to, and how checks go through
+// it.
+//
+// The tray, the media type, which way up and the offset are the printer's,
+// not an account's: they say where this printer takes check stock and where
+// it puts the ink, whichever account's stock is in the tray. So the printer
+// can be set up and calibrated before any account exists, which is before
+// signing in to Reconcile (docs/04-stock-and-layout.md, "Alignment and
+// calibration"). What differs from one account to another is the stock, the
+// layout of its paper, which stays on the account.
 type Printer struct {
 	Name string // the person's name for it: "Office M612"
 	URL  string // ipp://…, ipps://…, or file:<dir> in development
 	Pin  string // the SHA-256 of its certificate, for ipps
+
+	Tray      string // the printer's media-source for checks: tray-1
+	MediaType string // the printer's media-type for check stock: stationery-preprinted
+	Feed      string // which way up, written once: "face up, stubs in first"
+	Offset    Offset // from the calibration page
 }
+
+// The defaults for a printer's checks: the M612's multipurpose tray, and the
+// IPP Everywhere name for pre-printed paper, which most printers use.
+const (
+	DefaultTray      = "tray-1"
+	DefaultMediaType = "stationery-preprinted"
+)
 
 // Offset is how far this computer's printer puts ink from where the layout
 // says, in millimetres: positive x is to the right, positive y is down. It
@@ -39,26 +61,22 @@ type Account struct {
 	Name  string // "Checking A"
 	Last4 string // for the image: XXXXXX1234
 
-	Stock     string // the layout's name
-	Printer   string // a Printer's Name
-	Tray      string // the printer's media-source for the checks: tray-1
-	MediaType string // the printer's media-type for the stock: stationery-preprinted
-	Feed      string // which way up, written once: "face up, stubs in first"
+	Stock   string // the layout of its check stock's paper
+	Printer string // a Printer's Name: the tray, the feed and the offset are its
 
 	Ceiling money.Cents // above it, an amount is asked about again
-	Offset  Offset
 
 	// ReconcileID is Reconcile's id for the account, once signed in
 	// (docs/08). Empty until then; checks are kept under Key either way.
 	ReconcileID string
 }
 
-// DefaultFeed is which way up the stock goes in, for an account that hasn't
+// DefaultFeed is which way up the stock goes in, for a printer that hasn't
 // said: the answer a marked sheet gave on the M612's multipurpose tray
 // (docs/05-printing.md, "Which way up"), the printer both computers print
 // on. It is only words shown beside the Print button; nothing in the job
-// depends on it, so a printer that feeds the other way is told by its
-// account's own feed, settled with a marked sheet of its own.
+// depends on it, so a printer that feeds the other way is told by its own
+// feed, settled with a marked sheet of its own.
 const DefaultFeed = "face up, stubs in first"
 
 // Settings is everything this package keeps.
@@ -103,21 +121,25 @@ func (b *Business) Settings() (Settings, error) {
 	return b.load()
 }
 
-// load reads the settings, with the default feed given to an account that
-// has none, so that every page shows the same answer for it.
+// load reads the settings, with the defaults given to a printer that lacks
+// them, so that every page, and every print job, has the same answer.
 func (b *Business) load() (Settings, error) {
 	s, err := b.store.Load()
 	if err != nil {
 		return Settings{}, err
 	}
 
-	for i := range s.Accounts {
-		if s.Accounts[i].Feed == "" {
-			s.Accounts[i].Feed = DefaultFeed
-		}
+	for i := range s.Printers {
+		withDefaults(&s.Printers[i])
 	}
 
 	return s, nil
+}
+
+func withDefaults(p *Printer) {
+	p.Tray = cmp.Or(strings.TrimSpace(p.Tray), DefaultTray)
+	p.MediaType = cmp.Or(strings.TrimSpace(p.MediaType), DefaultMediaType)
+	p.Feed = cmp.Or(strings.TrimSpace(p.Feed), DefaultFeed)
 }
 
 // Printer is one printer.
@@ -162,9 +184,16 @@ func (b *Business) CheckAccount(key string) (checkbus.Account, error) {
 		return checkbus.Account{}, err
 	}
 
+	// The offset is the printer's: the PDF a check is printed from carries
+	// where this printer needs the ink moved.
+	p, err := b.Printer(a.Printer)
+	if err != nil {
+		return checkbus.Account{}, err
+	}
+
 	return checkbus.Account{
 		Key: a.Key, Last4: a.Last4, Stock: a.Stock, Ceiling: a.Ceiling,
-		OffsetX: a.Offset.X, OffsetY: a.Offset.Y,
+		OffsetX: p.Offset.X, OffsetY: p.Offset.Y,
 	}, nil
 }
 
@@ -180,12 +209,15 @@ func (f forChecks) Account(key string) (checkbus.Account, error) { return f.b.Ch
 func (b *Business) SavePrinter(was string, p Printer) error {
 	p.Name = strings.TrimSpace(p.Name)
 	p.URL = strings.TrimSpace(p.URL)
+	withDefaults(&p)
 
 	switch {
 	case p.Name == "":
 		return Invalid{Field: "name", Sentence: "Give the printer a name, such as Office M612."}
 	case !printerURL(p.URL):
 		return Invalid{Field: "url", Sentence: "A printer's address starts ipp:// or ipps://, such as ipps://printer.local/ipp/print."}
+	case abs(p.Offset.X) > maxOffset || abs(p.Offset.Y) > maxOffset:
+		return Invalid{Field: "offset", Sentence: fmt.Sprintf("An offset is at most %g mm either way. More than that is a sheet fed the wrong way, not a printer a little off.", maxOffset)}
 	}
 
 	b.mu.Lock()
@@ -258,14 +290,9 @@ const maxOffset = 10.0
 func (b *Business) SaveAccount(a Account, isNew bool) error {
 	a.Name = strings.TrimSpace(a.Name)
 	a.Last4 = strings.TrimSpace(a.Last4)
-	a.Feed = strings.TrimSpace(a.Feed)
 
 	if a.Ceiling <= 0 {
 		a.Ceiling = checkbus.DefaultCeiling
-	}
-
-	if a.Feed == "" {
-		a.Feed = DefaultFeed
 	}
 
 	switch {
@@ -275,12 +302,6 @@ func (b *Business) SaveAccount(a Account, isNew bool) error {
 		return Invalid{Field: "name", Sentence: "Give the account a name, such as Checking A."}
 	case !last4.MatchString(a.Last4):
 		return Invalid{Field: "last4", Sentence: "The last four digits of the account number, and no more."}
-	case a.Tray == "":
-		return Invalid{Field: "tray", Sentence: "Say which tray holds the checks."}
-	case a.MediaType == "":
-		return Invalid{Field: "media_type", Sentence: "Say which media type the checks are, as the printer names it: stationery-preprinted on most printers."}
-	case abs(a.Offset.X) > maxOffset || abs(a.Offset.Y) > maxOffset:
-		return Invalid{Field: "offset", Sentence: fmt.Sprintf("An offset is at most %g mm either way. More than that is a sheet fed the wrong way, not a printer a little off.", maxOffset)}
 	}
 
 	if _, err := layoutbus.Load(a.Stock); err != nil {

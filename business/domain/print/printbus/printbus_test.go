@@ -20,13 +20,14 @@ func setup(t *testing.T, printerURL string, offset settingsbus.Offset) *printbus
 
 	s := settingsbus.New(settingsfile.New(filepath.Join(t.TempDir(), "config.toml")))
 
-	if err := s.SavePrinter("", settingsbus.Printer{Name: "Office", URL: printerURL}); err != nil {
+	if err := s.SavePrinter("", settingsbus.Printer{
+		Name: "Office", URL: printerURL, Tray: "tray-1", MediaType: "stationery-preprinted", Offset: offset,
+	}); err != nil {
 		t.Fatal(err)
 	}
 
 	if err := s.SaveAccount(settingsbus.Account{
-		Key: "checking-a", Name: "Checking A", Last4: "1234", Stock: "walmart-voucher-top",
-		Printer: "Office", Tray: "tray-1", MediaType: "stationery-preprinted", Offset: offset,
+		Key: "checking-a", Name: "Checking A", Last4: "1234", Stock: "walmart-voucher-top", Printer: "Office",
 	}, true); err != nil {
 		t.Fatal(err)
 	}
@@ -34,9 +35,9 @@ func setup(t *testing.T, printerURL string, offset settingsbus.Offset) *printbus
 	return printbus.New(s, &ipp.Client{User: "reconcile-checks"})
 }
 
-// The calibration page goes out exactly as a check will: the account's tray
+// The calibration page goes out exactly as a check will: the printer's tray
 // and media type, one-sided, unscaled, on the stock's paper, and shifted by
-// the account's offset.
+// the printer's offset. It needs a printer and a stock, and no account.
 func TestTheCalibrationPageIsPrintedAsACheckWouldBe(t *testing.T) {
 	printer := ipptest.New()
 	defer printer.Close()
@@ -44,7 +45,7 @@ func TestTheCalibrationPageIsPrintedAsACheckWouldBe(t *testing.T) {
 	offset := settingsbus.Offset{X: 1.5, Y: -0.5}
 	b := setup(t, printer.URL, offset)
 
-	sent, err := b.Calibrate(t.Context(), "checking-a")
+	sent, err := b.Calibrate(t.Context(), "Office", "walmart-voucher-top")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +102,7 @@ func TestAPrinterThatRefusesTheOptionsPrintsNothing(t *testing.T) {
 
 	b := setup(t, printer.URL, settingsbus.Offset{})
 
-	if _, err := b.Calibrate(t.Context(), "checking-a"); err == nil {
+	if _, err := b.Calibrate(t.Context(), "Office", "walmart-voucher-top"); err == nil {
 		t.Fatal("the calibration page was sent to a printer that refused its options")
 	}
 
@@ -117,7 +118,7 @@ func TestTrustPinsThePrinter(t *testing.T) {
 
 	b := setup(t, printer.URL, settingsbus.Offset{})
 
-	if _, err := b.Calibrate(t.Context(), "checking-a"); err == nil {
+	if _, err := b.Calibrate(t.Context(), "Office", "walmart-voucher-top"); err == nil {
 		t.Fatal("printed over ipps with no pin")
 	}
 
@@ -125,7 +126,7 @@ func TestTrustPinsThePrinter(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := b.Calibrate(t.Context(), "checking-a"); err != nil {
+	if _, err := b.Calibrate(t.Context(), "Office", "walmart-voucher-top"); err != nil {
 		t.Errorf("after Trust: %v", err)
 	}
 }

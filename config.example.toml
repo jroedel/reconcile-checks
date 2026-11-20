@@ -36,18 +36,18 @@
 # name = "Office M612"                              # what Settings calls it
 # url  = "ipps://NPI46CBDF.local:631/ipp/print"     # its IPP address; "file:<dir>" in development
 # pin  = "…"                                        # its certificate's SHA-256, remembered when added
+# tray       = "tray-1"                  # the tray checks go in (the default)
+# media_type = "stationery-preprinted"   # the printer's name for check stock (the default)
+# feed       = "face up, stubs in first"   # which way up, settled once with a marked sheet (the default)
+# [printer.offset_mm]                    # from the calibration page: + is right and down, for every account's checks
+# x = 0.0
+# y = 0.0
 
 # [[account]]
 # key        = "checking-a"              # this computer's name for it: its folder of checks. Never changes.
 # name       = "Checking A"
 # last4      = "1234"                    # for the image: XXXXXX1234
 # stock      = "walmart-voucher-top"     # the layout, from layouts/
-# printer    = "Office M612"             # a [[printer]]'s name
-# tray       = "tray-1"                  # the printer's tray for the checks
-# media_type = "stationery-preprinted"   # the printer's name for the stock
-# feed       = "face up, stubs in first"   # which way up, settled once with a marked sheet
+# printer    = "Office M612"             # a [[printer]]'s name: its tray, feed and offset are used
 # ceiling    = "10,000.00"               # above it, an amount is asked about again
 # reconcile_id = "…"                     # Reconcile's id, once signed in
-# [account.offset_mm]                    # from the calibration page: + is right and down
-# x = 0.0
-# y = 0.0

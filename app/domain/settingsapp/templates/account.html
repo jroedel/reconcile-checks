@@ -38,27 +38,7 @@
 <select id="printer" name="printer"{{if eq .Field "printer"}} aria-invalid="true"{{end}}>
 {{range .Printers}}<option value="{{.Name}}"{{if eq .Name $.Data.Account.Printer}} selected{{end}}>{{.Name}}</option>{{end}}
 </select>
-{{if .Asked}}<p class="hint">The printer didn't answer, so its trays and media types can't be listed: {{.Asked}}</p>{{end}}
-</div>
-
-<div class="field">
-<label for="tray">Tray the checks are in</label>
-<input type="text" id="tray" name="tray" list="trays" value="{{.Account.Tray}}" required placeholder="tray-1"{{if eq .Field "tray"}} aria-invalid="true" autofocus{{end}}>
-<datalist id="trays">{{range .Attrs.Sources}}<option value="{{.}}">{{end}}</datalist>
-{{if .Attrs.Sources}}<p class="hint">This printer has {{join .Attrs.Sources}}.</p>{{end}}
-</div>
-
-<div class="field">
-<label for="media_type">Media type</label>
-<input type="text" id="media_type" name="media_type" list="types" value="{{.Account.MediaType}}" required{{if eq .Field "media_type"}} aria-invalid="true" autofocus{{end}}>
-<datalist id="types">{{range .Attrs.Types}}<option value="{{.}}">{{end}}</datalist>
-<p class="hint">Pre-printed check stock is stationery-preprinted on most printers. Set the tray to the same paper type on the printer's own panel.</p>
-</div>
-
-<div class="field">
-<label for="feed">Which way up</label>
-<input type="text" id="feed" name="feed" value="{{.Account.Feed}}" placeholder="face up, stubs in first">
-<p class="hint">Shown beside the Print button. Face up, stubs in first is the answer for the M612's tray 1; for another printer or tray, feed a plain sheet marked "top, this side up" and write what it shows.</p>
+<p class="hint">The tray, which way up and the offset are the printer's, set on its page.</p>
 </div>
 
 <div class="field">
@@ -67,27 +47,9 @@
 <p class="hint">A check for more than this is asked about a second time, with the amount in words.</p>
 </div>
 
-<fieldset class="field">
-<legend>Offset, in millimetres</legend>
-<label for="offset_x">To the right</label>
-<input type="text" id="offset_x" name="offset_x" value="{{.Account.Offset.X}}" inputmode="decimal"{{if eq .Field "offset"}} aria-invalid="true" autofocus{{end}}>
-<label for="offset_y">Down</label>
-<input type="text" id="offset_y" name="offset_y" value="{{.Account.Offset.Y}}" inputmode="decimal">
-<p class="hint">How far to move everything printed, to correct this printer. Set from the calibration page; a negative number moves it left or up.</p>
-</fieldset>
-
 <button type="submit">{{if .New}}Add the account{{else}}Save{{end}}</button>
 </form>
 
-{{if not .New}}
-<h2>Calibration page</h2>
-<p>The calibration page shows where this printer puts the check's boxes, so the offset above can be set. It goes through <strong>{{.Account.Tray}}</strong> with the same options as a check.</p>
-<p><strong>Take the checks out of {{.Account.Tray}} and put plain paper in first.</strong> A calibration page printed on a check spoils the check.</p>
-<form method="post" action="/settings/accounts/{{.Account.Key}}/calibrate">
-<input type="hidden" name="form_token" value="{{$.FormToken}}">
-<button type="submit" class="quiet">Print the calibration page on plain paper</button>
-</form>
-{{end}}
 <p class="aside"><a href="/settings">Back to Settings</a></p>
 {{end}}
 {{end}}

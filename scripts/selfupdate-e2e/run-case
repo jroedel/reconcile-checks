@@ -1,0 +1,301 @@
+#!/bin/bash
+#
+# run-case — one computer, one release, one expectation. Runs inside the
+# container; ../run says what through the environment:
+#
+#   CURRENT_VERSION  what is installed to begin with
+#   NEXT_VERSION     what the release offers
+#   EXPECT           updated | refused | no-key | nothing-to-do | not-writable
+#                    | app-updated | app-rolled-back | probation-rolled-back
+#   INSTALL_DIR      where the program is installed (default: the person's own)
+#   INSTALL_OWNER    who owns that folder (default: the person)
+#
+# Mounted read-only at /in: ca.pem, and current, the program to install.
+
+set -uo pipefail
+
+: "${INSTALL_DIR:=/home/treasurer/.local/bin}"
+: "${INSTALL_OWNER:=treasurer}"
+: "${CURRENT_VERSION:?}"
+: "${NEXT_VERSION:?}"
+: "${EXPECT:?}"
+
+PERSON=treasurer
+HOME_DIR=/home/$PERSON
+EXE="$INSTALL_DIR/reconcile-checks"
+CONFIG="$HOME_DIR/test-config/config.toml"
+DATA="$HOME_DIR/test-config/data"
+PORT=7461
+
+fail=0
+
+note() { printf '      %s\n' "$*"; }
+bad()  { printf '      \033[31mFAIL\033[0m %s\n' "$*"; fail=1; }
+good() { printf '      \033[32mok\033[0m   %s\n' "$*"; }
+
+# The harness CA in the system's trust store, not SSL_CERT_FILE: what wants
+# proving is that the program's own TLS check against the system's roots
+# passes, not that it honours a variable.
+cp /in/ca.pem /usr/local/share/ca-certificates/harness.crt
+update-ca-certificates >/dev/null 2>&1
+
+as_person() { runuser -u "$PERSON" -- env HOME="$HOME_DIR" "$@"; }
+
+if [ "$INSTALL_OWNER" = root ]; then
+  mkdir -p "$INSTALL_DIR"
+else
+  as_person mkdir -p "$INSTALL_DIR"
+fi
+
+install -m 0755 -o "$INSTALL_OWNER" /in/current "$EXE"
+
+# A test config with its own data folder, as development always uses
+# (CLAUDE.md, section 6); its printers would be file: folders, and it has
+# none. The program stays open ten minutes with no page, long enough to watch.
+as_person mkdir -p "$DATA"
+as_person tee "$CONFIG" >/dev/null <<EOF
+data = "data"
+port = $PORT
+close_after = "10m"
+EOF
+
+installed() { as_person "${1:-$EXE}" version 2>&1 | head -1; }
+
+note "installed: $(installed)"
+note "in $INSTALL_DIR ($(stat -c '%A %U' "$INSTALL_DIR")), run by $PERSON"
+
+# health is what the running copy answers on /healthz, over bash's own TCP:
+# nothing in this container can fetch over HTTP but the program.
+health() {
+  timeout 3 bash -c "exec 3<>/dev/tcp/127.0.0.1/$PORT || exit 1
+    printf 'GET /healthz HTTP/1.0\r\nHost: 127.0.0.1:$PORT\r\n\r\n' >&3
+    cat <&3" 2>/dev/null | tail -1 | tr -d '\r'
+}
+
+# wait_health waits up to $2 seconds for /healthz to say "ok $1".
+wait_health() {
+  local i
+  for i in $(seq 1 $(($2 * 4))); do
+    [ "$(health)" = "ok $1" ] && return 0
+    sleep 0.25
+  done
+  return 1
+}
+
+# wait_gone waits up to $2 seconds for the file $1 to go.
+wait_gone() {
+  local i
+  for i in $(seq 1 $(($2 * 4))); do
+    [ ! -e "$1" ] && return 0
+    sleep 0.25
+  done
+  return 1
+}
+
+# copies counts the program's processes by their command line: a process's
+# name is cut to 15 characters, one short of reconcile-checks.
+copies() { pgrep -c -f "^$EXE( |\$)" || true; }
+
+# wait_log waits up to $2 seconds for the program's log to say $1.
+wait_log() {
+  local i
+  for i in $(seq 1 $(($2 * 4))); do
+    grep -q "$1" "$DATA/reconcile-checks.log" 2>/dev/null && return 0
+    sleep 0.25
+  done
+  return 1
+}
+
+open_program() { as_person "$EXE" --no-browser --config "$CONFIG" >>/tmp/app.out 2>&1; }
+
+show_log() { sed 's/^/      log | /' "$DATA/reconcile-checks.log" 2>/dev/null | grep -i -E 'update|version|probation|went back|restart|refus|gave up' | tail -${1:-15}; }
+
+# ---------------------------------------------------------------------------
+# The program running: it checks at start, installs, and restarts itself.
+# ---------------------------------------------------------------------------
+
+if [ "$EXPECT" = app-updated ] || [ "$EXPECT" = app-rolled-back ]; then
+  open_program &
+
+  # From its log rather than /healthz: the check at start can have installed
+  # and restarted before a first probe would see it answer.
+  if wait_log "msg=starting version=$CURRENT_VERSION" 20; then
+    good "the program started as $CURRENT_VERSION"
+  else
+    bad "the program never started as $CURRENT_VERSION"
+  fi
+
+  if [ "$EXPECT" = app-updated ]; then
+    if wait_health "$NEXT_VERSION" 90; then
+      good "and without anyone asking, it restarted into $NEXT_VERSION: /healthz says ok $NEXT_VERSION"
+    else
+      bad "it never came back as $NEXT_VERSION (it says: $(health))"
+    fi
+
+    [[ "$(installed)" == *" $NEXT_VERSION "* ]] && good "the program on the disk is $NEXT_VERSION" \
+                                               || bad "the program on the disk is $(installed)"
+
+    if wait_gone "$EXE.probation" 15; then
+      good "the new version served a page and opened the register: probation passed"
+    else
+      bad "still on probation: $(cat "$EXE.probation")"
+    fi
+
+    [ ! -e "$EXE.old" ] && good "the previous version was removed once the new one passed" \
+                        || bad "$EXE.old is still there"
+
+    sleep 2
+    [ "$(copies)" = 1 ] && good "one copy running: the old one let go and left" \
+                        || bad "$(copies) copies running"
+
+    [ -e "$DATA/update-checked" ] && good "the day's check is recorded" || bad "the check was not recorded"
+  else
+    wait_log 'restarting into the update' 30 && note "it installed $NEXT_VERSION and restarted into it"
+
+    # The new one has 30 seconds to answer; then the old one goes back.
+    if wait_log 'went back to the previous version and started it' 60; then
+      good "the update never answered, so it went back to $CURRENT_VERSION"
+    else
+      bad "it never went back"
+    fi
+
+    if wait_health "$CURRENT_VERSION" 40; then
+      good "and $CURRENT_VERSION is running again: /healthz says ok $CURRENT_VERSION"
+    else
+      bad "nothing is answering as $CURRENT_VERSION (it says: $(health))"
+    fi
+
+    [[ "$(installed)" == *" $CURRENT_VERSION "* ]] && good "the program on the disk is $CURRENT_VERSION again" \
+                                                  || bad "the program on the disk is $(installed)"
+
+    grep -qx "$NEXT_VERSION" "$EXE.refused" 2>/dev/null && good "and $NEXT_VERSION is on the refused list" \
+                                                       || bad "$NEXT_VERSION is not refused: $(cat "$EXE.refused" 2>/dev/null)"
+
+    [ ! -e "$EXE.probation" ] && good "probation is over" || bad "probation outlived the rollback"
+
+    sleep 1
+    [ "$(copies)" = 1 ] && good "one copy running: the update that hung was stopped" \
+                        || bad "$(copies) copies running: $(pgrep -a -f "^$EXE( |\$)" | tr '\n' ';')"
+  fi
+
+  show_log
+  exit "$fail"
+fi
+
+# ---------------------------------------------------------------------------
+# Probation: installed, then opened by a person, and failing every time.
+# ---------------------------------------------------------------------------
+
+if [ "$EXPECT" = probation-rolled-back ]; then
+  as_person "$EXE" update >/tmp/update.log 2>&1
+  sed 's/^/      | /' /tmp/update.log | grep -v '^      | time=' | tail -2
+
+  [[ "$(installed)" == *" $NEXT_VERSION "* ]] || { bad "the bad version was never installed"; exit 1; }
+
+  for n in 1 2 3; do
+    open_program
+    note "opened the program ($n): it exited $?"
+  done
+
+  open_program &
+  note "opened the program (4): probation gives up on $NEXT_VERSION"
+
+  if wait_health "$CURRENT_VERSION" 40; then
+    good "and $CURRENT_VERSION is running: /healthz says ok $CURRENT_VERSION"
+  else
+    bad "nothing is answering as $CURRENT_VERSION (it says: $(health))"
+  fi
+
+  [[ "$(installed)" == *" $CURRENT_VERSION "* ]] && good "the program on the disk is $CURRENT_VERSION again" \
+                                                || bad "the program on the disk is $(installed)"
+
+  grep -qx "$NEXT_VERSION" "$EXE.refused" 2>/dev/null && good "$NEXT_VERSION is on the refused list" \
+                                                     || bad "$NEXT_VERSION is not refused"
+
+  [ ! -e "$EXE.probation" ] && good "probation is over" || bad "probation outlived the rollback"
+
+  as_person "$EXE" update >/tmp/again.log 2>&1
+
+  if grep -q "gave up on" /tmp/again.log; then
+    good "and \`update\` won't install $NEXT_VERSION again"
+  else
+    bad "it would install $NEXT_VERSION again: $(tail -1 /tmp/again.log)"
+  fi
+
+  exit "$fail"
+fi
+
+# ---------------------------------------------------------------------------
+# Everything else: `reconcile-checks update`, and what it left.
+# ---------------------------------------------------------------------------
+
+as_person "$EXE" update >/tmp/update.log 2>&1
+status=$?
+
+sed 's/^/      | /' /tmp/update.log
+
+now="$(installed)"
+
+case "$EXPECT" in
+  updated)
+    [ "$status" -eq 0 ] && good "exit 0" || bad "exit $status, wanted 0"
+
+    [[ "$now" == *" $NEXT_VERSION "* ]] && good "the program on the disk is now $NEXT_VERSION" \
+                                       || bad "it reports $now, wanted $NEXT_VERSION"
+
+    if [ -f "$EXE.old" ] && [[ "$(installed "$EXE.old")" == *" $CURRENT_VERSION "* ]]; then
+      good "$CURRENT_VERSION was kept beside it as .old"
+    else
+      bad "no usable .old was kept"
+    fi
+
+    [ -f "$EXE.probation" ] && good "the new version is on probation: $(tr -d '\n' <"$EXE.probation")" \
+                            || bad "the new version is not on probation"
+    ;;
+
+  refused)
+    [ "$status" -ne 0 ] && good "exit $status" || bad "exit 0: a bad release was accepted"
+
+    [[ "$now" == *" $CURRENT_VERSION "* ]] && good "still $CURRENT_VERSION: nothing was replaced" \
+                                          || bad "it reports $now: changed by a release it refused"
+
+    [ -e "$EXE.old" ] && bad "an .old was left by an update that didn't happen" || good "no .old: the swap never started"
+    [ -e "$EXE.probation" ] && bad "a refused release was put on probation"
+    ;;
+
+  no-key)
+    [ "$status" -ne 0 ] && good "exit $status" || bad "exit 0: a build with no key updated"
+
+    grep -q "without the key" /tmp/update.log && good "said it was built without the key" \
+                                              || bad "didn't say why"
+
+    [[ "$now" == *" $CURRENT_VERSION "* ]] && good "still $CURRENT_VERSION" || bad "changed anyway: $now"
+    ;;
+
+  not-writable)
+    [ "$status" -ne 0 ] && good "exit $status" || bad "exit 0: wanted a refusal"
+
+    grep -q "can't write to its own folder" /tmp/update.log && good "said it can't write to its own folder" \
+                                                           || bad "didn't say why, in words a person can act on"
+
+    [[ "$now" == *" $CURRENT_VERSION "* ]] && good "still $CURRENT_VERSION" || bad "changed anyway: $now"
+    ;;
+
+  nothing-to-do)
+    [ "$status" -eq 0 ] && good "exit 0: nothing to do is not an error" || bad "exit $status"
+
+    [[ "$now" == *" $CURRENT_VERSION "* ]] && good "still $CURRENT_VERSION" || bad "replaced itself: $now"
+    ;;
+
+  *)
+    bad "unknown EXPECT=$EXPECT"
+    ;;
+esac
+
+# A .new or .probe left in the program's folder is a file somebody finds a
+# year later and can't explain.
+for leftover in "$EXE.new" "$EXE.probe"; do
+  [ -e "$leftover" ] && bad "left $leftover behind"
+done
+
+exit "$fail"

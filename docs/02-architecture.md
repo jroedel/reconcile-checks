@@ -175,6 +175,6 @@ A person never needs it. For development and support only:
 | `reconcile-checks` | Starts (or finds the running copy) and opens the browser |
 | `reconcile-checks --no-browser` | Starts and prints the address instead; for tests and CI |
 | `reconcile-checks --config <path>` | Uses another config and its data directory |
-| `reconcile-checks version` | The version, OS and architecture |
-| `reconcile-checks update [--check]` | Updates now, or only says whether there is one |
+| `reconcile-checks version` | The version, OS and architecture, and the update key's fingerprint (`key:…`, or `key:none`) |
+| `reconcile-checks update [--check] [--forget]` | Updates now, or only says whether there is one; `--forget` lets it install again a version it gave up on |
 

@@ -87,6 +87,25 @@ jobs:
       - name: the release binaries build
         run: make release-all VERSION=v0.0.0-ci && make checksums && ls -l dist
 
+  # The program updating itself, end to end: real binaries built with a
+  # throwaway key, against a fake GitHub on a Docker network with no way out
+  # (scripts/selfupdate-e2e/run). A job of its own because it takes a few
+  # minutes and needs only Docker, which the runner has.
+  selfupdate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: self-update, end to end
+        run: make selfupdate-e2e
+
   windows:
     runs-on: windows-latest
 

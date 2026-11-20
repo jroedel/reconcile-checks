@@ -18,6 +18,7 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -37,6 +38,7 @@ import (
 	"github.com/jroedel/reconcile-checks/foundation/lockfile"
 	"github.com/jroedel/reconcile-checks/foundation/logger"
 	"github.com/jroedel/reconcile-checks/foundation/mdns"
+	"github.com/jroedel/reconcile-checks/foundation/selfupdate"
 	"github.com/jroedel/reconcile-checks/foundation/sqldb"
 	"github.com/jroedel/reconcile-checks/foundation/web"
 )
@@ -48,30 +50,33 @@ const shutdownGrace = 5 * time.Second
 // start runs the program: it takes the lock, or hands over to the copy that
 // holds it; then it opens the register, binds the port, opens the browser and
 // serves until Quit, a signal, or two minutes with no page open.
-func start(opt options, stdout, stderr io.Writer) error {
+//
+// It returns a relaunch when another copy must start once this one has let go
+// of everything: after a rollback at start, and to restart into an update.
+func start(opt options, stdout, stderr io.Writer) (*relaunch, error) {
 	cfg, err := loadConfig(opt.config)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	lock, err := takeLock(cfg.Data, opt.waitForLock)
 	if errors.Is(err, lockfile.ErrHeld) {
-		return handoff(cfg.Data, opt.noBrowser, stdout)
+		return nil, handoff(cfg.Data, opt.noBrowser, stdout)
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer lock.Release()
 
 	logFile, err := openLog(cfg.Data)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer logFile.Close()
 
 	level, err := logger.Level(cfg.LogLevel)
 	if err != nil {
-		return fmt.Errorf("%s: %w", cfg.file, err)
+		return nil, fmt.Errorf("%s: %w", cfg.file, err)
 	}
 
 	// The log goes to the file, always: on Windows the program has no console,
@@ -89,26 +94,50 @@ func start(opt options, stdout, stderr io.Writer) error {
 
 	log.Info("starting", "version", version, "config", cfg.file, "data", cfg.Data)
 
+	// The last update first, before the register, whose failure is what
+	// probation is there to survive (docs/10, "Rollback, twice over"). A
+	// build whose key can't be read still starts: it can't update, and says
+	// so, but a person can still print.
+	updater, err := newUpdater(log)
+	if err != nil {
+		log.Error("this copy can't update itself", "err", err)
+	}
+
+	var trial selfupdate.Start
+
+	if updater != nil {
+		smoke, cancel := context.WithTimeout(context.Background(), time.Minute)
+		trial = updater.Start(smoke)
+		cancel()
+
+		if trial.Outcome == selfupdate.RolledBack {
+			log.Warn("this version did not start often enough and was given up; starting the previous one",
+				"gave_up_on", trial.Failed, "now", trial.Version)
+
+			return &relaunch{updater: updater, data: cfg.Data, args: relaunchArgs(opt, opt.noBrowser)}, nil
+		}
+	}
+
 	k, err := keys(cfg.Data)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	db, err := openRegister(cfg.Data)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer db.Close()
 
 	ln, err := listen(cfg.Port, log)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	port := strconv.Itoa(ln.Addr().(*net.TCPAddr).Port)
 	if err := setPort(cfg.Data, k, ln.Addr().(*net.TCPAddr).Port); err != nil {
 		ln.Close()
-		return err
+		return nil, err
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -123,7 +152,7 @@ func start(opt options, stdout, stderr io.Writer) error {
 	render, err := page.New(log, sessions, version)
 	if err != nil {
 		ln.Close()
-		return err
+		return nil, err
 	}
 
 	// Printers: this computer's, kept in the config file. On Linux the IPP
@@ -162,7 +191,7 @@ func start(opt options, stdout, stderr io.Writer) error {
 	})
 	if err != nil {
 		ln.Close()
-		return err
+		return nil, err
 	}
 
 	// Close when no page has been open for the grace period.
@@ -175,10 +204,87 @@ func start(opt options, stdout, stderr io.Writer) error {
 		}
 	}()
 
+	// Once this copy answers its own /healthz, it has served a page and the
+	// register opened: an update on probation has passed. Only then is the
+	// day's check made, since no update installs over one not yet proven
+	// (docs/10, Open questions 3).
+	var restartInto atomic.Pointer[string]
+
+	go func() {
+		self := func() int { return ln.Addr().(*net.TCPAddr).Port }
+		if !waitHealthy(ctx, self, version, restartWithin) {
+			log.Warn("this copy never answered its own health check", "version", version)
+			return
+		}
+
+		if updater == nil {
+			return
+		}
+
+		updater.Passed()
+
+		if v, ok := checkForUpdate(ctx, log, updater, checks, cfg.Data); ok {
+			restartInto.Store(&v)
+			quit()
+		}
+	}()
+
 	address := "http://127.0.0.1:" + port + "/open?k=" + url.QueryEscape(sessions.Mint())
 	show(address, opt.noBrowser, stdout, log)
 
-	return web.Serve(ctx, log, shutdownGrace, ln, handler)
+	if err := web.Serve(ctx, log, shutdownGrace, ln, handler); err != nil {
+		return nil, err
+	}
+
+	if v := restartInto.Load(); v != nil {
+		return &relaunch{updater: updater, data: cfg.Data, args: relaunchArgs(opt, true), want: *v}, nil
+	}
+
+	return nil, nil
+}
+
+// checkForUpdate is the check at start (docs/10, "When"): at most once a day,
+// in the background. When it installs a version, it waits until no check is
+// printing, then reports the version to restart into.
+func checkForUpdate(ctx context.Context, log *slog.Logger, u *selfupdate.Updater, checks *checkbus.Business, data string) (string, bool) {
+	if !checkDue(data, time.Now()) {
+		return "", false
+	}
+
+	rel, ok, err := u.Apply(ctx)
+
+	switch {
+	case errors.Is(err, selfupdate.ErrNoKey):
+		log.Debug("not checking for updates", "reason", err)
+		return "", false
+	case err != nil:
+		log.Warn("the check for an update failed", "err", err)
+		return "", false
+	}
+
+	if err := checked(data, time.Now()); err != nil {
+		log.Warn("could not record the check for an update", "err", err)
+	}
+
+	if !ok {
+		return "", false
+	}
+
+	// Never while a check is printing or waiting on "Did it print
+	// correctly?": that is the state printing, until it is answered.
+	for {
+		busy, err := checks.Busy(ctx)
+		if err == nil && !busy {
+			return rel.Version, true
+		}
+
+		select {
+		case <-ctx.Done():
+			// Closing anyway: the next start is the new version.
+			return "", false
+		case <-time.After(10 * time.Second):
+		}
+	}
 }
 
 // takeLock takes the single-instance lock, waiting up to wait for it if asked

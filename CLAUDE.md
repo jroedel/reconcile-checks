@@ -118,8 +118,7 @@ make ipp-interop   # the IPP client against CUPS's ippeveprinter, on loopback. N
 make test-js       # the pages' JavaScript, under Node's own test runner
 make test-browser  # the pages in headless Chrome, against the program on a test config whose printer is a folder
 make icons         # redraws the icon and the Windows resource that carries it
-# Arriving later, with what they test:
-make selfupdate-e2e # the self-update cases in Docker, against a fake GitHub (with self-update)
+make selfupdate-e2e # self-update end to end, in Docker, against a fake GitHub and a throwaway key. Never the real GitHub.
 ```
 
 `make test-unit` counts the passing packages instead of listing them, so **there

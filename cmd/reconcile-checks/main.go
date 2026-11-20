@@ -9,7 +9,8 @@
 //	reconcile-checks                       start, or find the running copy, and open the browser
 //	reconcile-checks --no-browser          start and print the address instead
 //	reconcile-checks --config <path>       use another config, and its own data folder
-//	reconcile-checks version               the version, system and architecture
+//	reconcile-checks version               the version, system and architecture, and the update key's fingerprint
+//	reconcile-checks update [--check]      install a newer release now, or only say whether there is one
 package main
 
 import (
@@ -40,9 +41,15 @@ type options struct {
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
+	// Answered before anything else, with no side effects: the updater runs
+	// a downloaded release as `version` to smoke-test it.
 	if len(args) > 0 && args[0] == "version" {
-		fmt.Fprintf(stdout, "reconcile-checks %s %s/%s %s\n", version, runtime.GOOS, runtime.GOARCH, runtime.Version())
+		fmt.Fprintf(stdout, "reconcile-checks %s %s/%s %s %s\n", version, runtime.GOOS, runtime.GOARCH, runtime.Version(), keyWord())
 		return 0
+	}
+
+	if len(args) > 0 && args[0] == "update" {
+		return updateCommand(args[1:], stdout, stderr)
 	}
 
 	var opt options
@@ -66,9 +73,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	if err := start(opt, stdout, stderr); err != nil {
+	next, err := start(opt, stdout, stderr)
+	if err != nil {
 		fmt.Fprintln(stderr, "reconcile-checks:", err)
 		return 1
+	}
+
+	if next != nil {
+		return next.run(stderr)
 	}
 
 	return 0

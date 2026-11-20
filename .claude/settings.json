@@ -29,7 +29,14 @@
       "Read(~/AppData/Roaming/reconcile-checks/**)",
       "Read(~/AppData/Local/reconcile-checks/**)",
       "Read(./secrets.env)",
-      "Read(./config.toml)"
+      "Read(./config.toml)",
+      "Bash(make release-keygen*)",
+      "Bash(make release-public-key*)",
+      "Bash(make release-send-secret*)",
+      "Bash(make release-status*)",
+      "Bash(go run ./scripts/releasekey*)",
+      "Bash(go run scripts/releasekey*)",
+      "Read(./secrets.env.tmp)"
     ]
   }
 }

@@ -7,7 +7,6 @@ import (
 	"os"
 	"slices"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 )
@@ -32,7 +31,9 @@ func TestTheKeyIsOneWordInVersion(t *testing.T) {
 	releaseKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 	got := keyWord()
 
-	if !strings.HasPrefix(got, "key:") || len(got) != len("key:")+16 || strings.ContainsAny(got, " \t\n") {
+	// The same word scripts/releasekey's fingerprint gives for this key: the
+	// release job compares the two.
+	if got != "key:66687aadf862bd77" {
 		t.Errorf("a key: %q", got)
 	}
 

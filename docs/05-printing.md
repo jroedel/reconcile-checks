@@ -169,8 +169,9 @@ a full Letter page into its 4.23 mm margins and move every box. So whether it
 would honour `none` was an open question until a person printed the first
 calibration page on plain paper, on 2026-11-20: **it accepted the job with
 `print-scaling=none` and fidelity, and printed the page at full size.** The
-ruler's millimetres matched the check's own spacing across the page, and the
-boxes lay on the check's rules to within about half a millimetre.
+ruler's millimetres matched the check's own spacing across the page, and,
+held to the light against a blank check, the boxes lay on the check's rules,
+so the M612's offsets are 0.
 
 The program still sends `none` with fidelity on every job, so a firmware
 update that changes this shows as a refusal naming `print-scaling`, never as

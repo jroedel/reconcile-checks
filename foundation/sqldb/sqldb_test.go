@@ -229,6 +229,26 @@ func TestIsUniqueViolationRecognisesTheDriversError(t *testing.T) {
 	}
 }
 
+// A composite primary key reports a clash with its own code, not UNIQUE's.
+// The register's key is one (account, number), so this is the clash that
+// matters most here.
+func TestIsUniqueViolationRecognisesAPrimaryKey(t *testing.T) {
+	db := openTemp(t)
+
+	if _, err := db.ExecContext(t.Context(), `CREATE TABLE t (account TEXT NOT NULL, number INTEGER NOT NULL, PRIMARY KEY (account, number)) STRICT`); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO t VALUES ('checking-a', 1043)`); err != nil {
+		t.Fatalf("first insert: %v", err)
+	}
+
+	_, err := db.ExecContext(t.Context(), `INSERT INTO t VALUES ('checking-a', 1043)`)
+	if !sqldb.IsUniqueViolation(err) {
+		t.Errorf("a duplicate primary key was not recognised: %v", err)
+	}
+}
+
 // The same, for a reference. Both directions, because both are used: a row
 // naming one that is not there, and a delete of one that is still named.
 func TestIsForeignKeyViolationRecognisesTheDriversError(t *testing.T) {

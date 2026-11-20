@@ -31,6 +31,7 @@ key
 *.pem
 *.env
 .env*
+!secrets.env.example
 
 # A check printed or rendered from real data, and scans of real stock, whose
 # MICR line carries the full account and routing numbers. Golden test images

@@ -145,6 +145,39 @@ test-js: ## The JavaScript's unit tests, under Node's own test runner. No browse
 test-browser: ## The pages with scripts, in headless Chrome against the program on a test config
 	@scripts/js-test browser
 
+# ---------------------------------------------------------------- the release key
+#
+# These read secrets.env, which is not in the repository; it lives in the
+# password vault. They are a person's, at a terminal: .claude/settings.json
+# denies them to agents (CLAUDE.md, section 6). secrets.env.example says what
+# goes in the file and in what order these are run.
+
+.PHONY: release-keygen
+release-keygen: ## Make the release key: the private half into secrets.env, the public into release-key.pub (once)
+	@$(GO) run ./scripts/releasekey keygen
+
+.PHONY: release-public-key
+release-public-key: ## Write release-key.pub again from secrets.env
+	@$(GO) run ./scripts/releasekey public
+
+.PHONY: release-send-secret
+release-send-secret: ## Send the private half from secrets.env to the GitHub Actions secret RELEASE_SIGNING_KEY
+	@$(GO) run ./scripts/releasekey check
+	@$(GO) run ./scripts/releasekey secret | gh secret set RELEASE_SIGNING_KEY
+	@echo "Sent. GitHub keeps it write-only: nobody, the workflow aside, can read it back."
+
+.PHONY: release-status
+release-status: ## Ready to release? secrets.env, release-key.pub, main, and the GitHub secret
+	@$(GO) run ./scripts/releasekey check
+	@$(GO) run ./scripts/releasekey fingerprint
+	@git fetch -q origin main && git diff --quiet origin/main -- release-key.pub 2>/dev/null \
+		&& git cat-file -e origin/main:release-key.pub 2>/dev/null \
+		&& echo "release-key.pub is on main, as it is here." \
+		|| { echo "release-key.pub is not on main as it is here: commit it by pull request." >&2; exit 1; }
+	@gh secret list --json name --jq '.[].name' | grep -qx RELEASE_SIGNING_KEY \
+		&& echo "The GitHub Actions secret RELEASE_SIGNING_KEY is set." \
+		|| { echo "The GitHub Actions secret RELEASE_SIGNING_KEY is not set: make release-send-secret." >&2; exit 1; }
+
 .PHONY: selfupdate-e2e
 selfupdate-e2e: ## Self-update end to end, in Docker, against a fake GitHub and a throwaway key (needs Docker)
 	GO=$(GO) scripts/selfupdate-e2e/run

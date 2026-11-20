@@ -251,6 +251,8 @@ func TestWhatCanNeverPrintIsRefusedAndTakesNoNumber(t *testing.T) {
 		"no date":        {func(c *checkbus.NewCheck) { c.WrittenOn = time.Time{} }, "date"},
 		"payee too long": {func(c *checkbus.NewCheck) { c.Payee = strings.Repeat("Payee with a long name ", 10) }, "payee"},
 		"bad character":  {func(c *checkbus.NewCheck) { c.Payee = "Łukasz" }, "payee"},
+		"eleven digits":  {func(c *checkbus.NewCheck) { c.Number = checkbus.MaxNumber + 1 }, "number"},
+		"memo too long":  {func(c *checkbus.NewCheck) { c.Memo = strings.Repeat("m", checkbus.MaxMemo+1) }, "memo"},
 	}
 
 	for name, tc := range cases {

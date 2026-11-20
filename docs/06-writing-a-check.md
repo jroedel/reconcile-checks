@@ -56,8 +56,9 @@ things keep one number from being used twice:
    the guard that always works, online or not.
 2. **Reconcile, before printing.** When online, the program asks Reconcile
    about the number before printing: already sent or voided by either
-   computer, or already cleared at the bank with another amount, and refuses
-   it if so ([09](09-reconcile-api.md)).
+   computer, or already paid by the bank with no image (a check written by
+   hand from the same book), and refuses it if so
+   ([09](09-reconcile-api.md), "Asking about the number before printing").
 3. **Sending at once.** A check is sent the moment it is confirmed printed,
    voids included, so the window in which the other computer can't see it
    is seconds, not days.

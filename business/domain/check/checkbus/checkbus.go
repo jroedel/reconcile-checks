@@ -23,6 +23,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jroedel/reconcile-checks/business/domain/layout/layoutbus"
 	"github.com/jroedel/reconcile-checks/business/types/money"
@@ -518,8 +519,8 @@ func (b *Business) Reprint(ctx context.Context, account string, number int) (New
 // The PDF keeps its bytes, since the number is pre-printed and not in it; the
 // image is drawn again, since it shows the number.
 func (b *Business) Renumber(ctx context.Context, account string, from, to int) error {
-	if to < 1 {
-		return Invalid{Field: "number", Sentence: "A check number is a whole number, 1 or more."}
+	if to < 1 || to > MaxNumber {
+		return Invalid{Field: "number", Sentence: "A check number is a whole number from 1 to ten digits."}
 	}
 
 	c, err := b.store.Get(ctx, account, from)
@@ -567,6 +568,17 @@ func (b *Business) account(key string) (Account, layoutbus.Layout, error) {
 	return acct, layout, nil
 }
 
+// What Reconcile takes (docs/09-reconcile-api.md, "The calls"), refused here
+// before printing rather than by Reconcile after: a check on paper that
+// Reconcile won't keep is one the person has to void. The layout's boxes
+// hold fewer characters than these today, so the layout refuses first; these
+// hold whatever stock comes later to the contract.
+const (
+	MaxNumber = 9_999_999_999 // ten digits: Reconcile's longest check number
+	MaxPayee  = 100           // characters
+	MaxMemo   = 100           // characters
+)
+
 // validate refuses what can never be printed, and returns the check as it
 // will be kept.
 func (b *Business) validate(nc NewCheck) (Check, error) {
@@ -584,6 +596,12 @@ func (b *Business) validate(nc NewCheck) (Check, error) {
 	switch {
 	case c.Number < 1:
 		return Check{}, Invalid{Field: "number", Sentence: "A check number is a whole number, 1 or more. Type the number on the paper in the tray."}
+	case c.Number > MaxNumber:
+		return Check{}, Invalid{Field: "number", Sentence: "A check number is at most ten digits. Type the number on the paper in the tray."}
+	case utf8.RuneCountInString(strings.Join(strings.Fields(c.Payee), " ")) > MaxPayee:
+		return Check{}, Invalid{Field: "payee", Sentence: fmt.Sprintf("A payee is at most %d characters.", MaxPayee)}
+	case utf8.RuneCountInString(strings.Join(strings.Fields(c.Memo), " ")) > MaxMemo:
+		return Check{}, Invalid{Field: "memo", Sentence: fmt.Sprintf("A memo is at most %d characters.", MaxMemo)}
 	case nc.WrittenOn.IsZero():
 		return Check{}, Invalid{Field: "date", Sentence: "Give the check a date."}
 	case c.Payee == "":

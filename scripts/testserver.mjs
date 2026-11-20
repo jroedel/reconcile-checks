@@ -27,8 +27,9 @@ const freePort = () =>
 
 // startServer gives back the program's base address, the session cookie's
 // name and value, the printer's folder, log() for everything it has written,
-// and stop().
-export async function startServer(name) {
+// and stop(). settings is more top-level config, such as the address of a
+// Reconcile the test runs itself.
+export async function startServer(name, { settings = "" } = {}) {
   const dir = mkdtempSync(join(tmpdir(), `reconcile-checks-${name}-`));
   const printer = join(dir, "printer");
   mkdirSync(printer);
@@ -54,6 +55,7 @@ export async function startServer(name) {
       join(dir, "config.toml"),
       `port = ${port}
 close_after = "10m"
+${settings}
 
 [[printer]]
 name = "Test printer"

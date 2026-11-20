@@ -26,6 +26,11 @@ const app = "reconcile-checks"
 // and not one any common program listens on.
 const defaultPort = 7461
 
+// defaultReconcile is the Reconcile this program signs in to and sends checks
+// to, unless the config names another (docs/08-signing-in.md). Written in,
+// so that nobody types it, on either computer.
+const defaultReconcile = "https://reconcile.schoenstatt-fathers.us"
+
 // defaultCloseAfter is how long the program waits with no page open before it
 // closes (docs/03-the-local-app.md, "When it closes"; decided 2026-11-20).
 const defaultCloseAfter = 2 * time.Minute
@@ -38,6 +43,12 @@ type config struct {
 	// development run never touches the real register.
 	Data string `toml:"data"`
 
+	// Reconcile is the address of the Reconcile to sign in to. Empty means
+	// defaultReconcile; with --config, empty means none, so that a
+	// development run signs in only to the Reconcile its config names --
+	// one running on this computer from ../reconcile (CLAUDE.md, section 6).
+	Reconcile string `toml:"reconcile"`
+
 	Port       int      `toml:"port"`
 	CloseAfter duration `toml:"close_after"`
 	LogLevel   string   `toml:"log_level"`
@@ -45,6 +56,9 @@ type config struct {
 	// Where the file was read from, and the folder it chose: shown in
 	// Settings.
 	file string
+
+	// explicit is --config: development and the tests.
+	explicit bool
 }
 
 // duration reads "2m" or "90s" from TOML.
@@ -85,6 +99,7 @@ func loadConfig(path string) (config, error) {
 	}
 
 	c.file = path
+	c.explicit = explicit
 
 	switch _, err := toml.DecodeFile(path, &c); {
 	case err == nil:
@@ -92,6 +107,10 @@ func loadConfig(path string) (config, error) {
 		// No config yet: the defaults are the whole configuration.
 	default:
 		return c, fmt.Errorf("reading %s: %w", path, err)
+	}
+
+	if !explicit {
+		c.Reconcile = cmp.Or(c.Reconcile, defaultReconcile)
 	}
 
 	c.Port = cmp.Or(c.Port, defaultPort)

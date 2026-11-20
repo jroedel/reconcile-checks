@@ -203,6 +203,7 @@ func start(opt options, stdout, stderr io.Writer) (*relaunch, error) {
 		Updates:    updates,
 		Context:    ctx,
 		Checks:     checks,
+		SignIn:     signIn(cfg, log),
 		Settings:   settings,
 		Print:      printbus.New(settings, client),
 		Finder:     finder,

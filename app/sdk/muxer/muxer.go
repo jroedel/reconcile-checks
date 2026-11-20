@@ -12,7 +12,7 @@
 //	RequireLocalHost       refuses a Host that is not 127.0.0.1:{port}: DNS rebinding
 //	Authenticate           reads the session cookie, and refuses nobody
 //	MaxBody                caps every body
-//	  -- the open routes: the embedded files, /healthz, /open, /launch
+//	  -- the open routes: the embedded files, /healthz, /open, /launch, /callback
 //	  Require              refuses a request with no session
 //	    RequireSameOrigin  refuses a write that no page of this server asked for
 //	      the app
@@ -28,6 +28,12 @@
 //     carries no cookie, and proves itself with the launch key instead; it
 //     sits behind SameOriginOnly, which lets a program through and refuses
 //     another website.
+//   - /callback is where Reconcile's sign-in sends the browser back. That
+//     navigation comes from Reconcile's site, so the SameSite=Strict cookie
+//     isn't sent with it. It proves itself with the state this program made
+//     and the issuer, and keeps nothing: it hands the key on to
+//     /settings/reconcile/keep, which is behind the session
+//     (app/domain/settingsapp, reconcile.go).
 package muxer
 
 import (
@@ -49,6 +55,7 @@ import (
 	"github.com/jroedel/reconcile-checks/business/domain/check/checkbus"
 	"github.com/jroedel/reconcile-checks/business/domain/print/printbus"
 	"github.com/jroedel/reconcile-checks/business/domain/settings/settingsbus"
+	"github.com/jroedel/reconcile-checks/business/domain/signin/signinbus"
 	"github.com/jroedel/reconcile-checks/business/domain/update/updatebus"
 	"github.com/jroedel/reconcile-checks/foundation/sqldb"
 	"github.com/jroedel/reconcile-checks/foundation/web"
@@ -98,6 +105,9 @@ type Config struct {
 	Updates *updatebus.Business
 	Context context.Context
 	Checks  *checkbus.Business
+
+	// SignIn is signing in to Reconcile; nil hides it.
+	SignIn *signinbus.Business
 }
 
 // DefaultStock is the one stock this program knows today.
@@ -129,6 +139,8 @@ func New(cfg Config) (http.Handler, error) {
 		DataDir:    cfg.DataDir,
 		Updates:    cfg.Updates,
 		Context:    cfg.Context,
+		SignIn:     cfg.SignIn,
+		Port:       cfg.Port,
 	})
 	if err != nil {
 		return nil, err
@@ -174,6 +186,9 @@ func New(cfg Config) (http.Handler, error) {
 	app.HandleFunc("GET /settings/update", settings.Updating)
 	app.HandleFunc("GET /settings/update/status", settings.UpdateStatus)
 	app.HandleFunc("POST /settings/update/forget", settings.ForgetRefused)
+	app.HandleFunc("GET /settings/reconcile/sign-in", settings.SignIn)
+	app.HandleFunc("GET /settings/reconcile/keep", settings.Keep)
+	app.HandleFunc("POST /settings/reconcile/sign-out", settings.SignOut)
 	app.HandleFunc("GET /events", cfg.Presence.Events)
 	app.HandleFunc("GET /preview.png", preview.Preview)
 	app.HandleFunc("POST /quit", launch.Quit)
@@ -183,6 +198,7 @@ func New(cfg Config) (http.Handler, error) {
 	root.HandleFunc("GET "+page.StaticPrefix+"{hash}/{name...}", cfg.Render.Static)
 	root.HandleFunc("GET /healthz", health.Handler(cfg.Version, cfg.DB, cfg.Schema))
 	root.HandleFunc("GET /open", launch.Open)
+	root.HandleFunc("GET /callback", settings.Callback)
 	root.Handle("POST /launch", web.SameOriginOnly(cfg.Port)(http.HandlerFunc(launch.Launch)))
 	root.Handle("/", web.Wrap(app,
 		mid.Require(http.HandlerFunc(launch.Refused)),

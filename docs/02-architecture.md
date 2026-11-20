@@ -122,7 +122,7 @@ editable by hand. `config.example.toml` in this repository is its
 documentation.
 
 ```toml
-reconcile = "https://reconcile.example"   # the site's address
+reconcile = "http://127.0.0.1:8461"   # unset: the Reconcile the program is built for (08)
 
 [[printer]]
 name = "Office M612"
@@ -134,7 +134,7 @@ offset_mm = { x = 0.0, y = 0.0 }   # from its calibration page (04)
 
 [[account]]
 key     = "checking-a"   # this computer's key for it: the register and checks/<key>/ (06)
-reconcile_id = "…"       # Reconcile's id, set by Settings once signed in (08)
+reconcile_id = "…"       # Reconcile's id, chosen in Settings once signed in (08)
 name    = "Checking A"   # as Reconcile names it
 last4   = "1234"
 ceiling = "10000.00"     # above it, an amount is asked about again (04)
@@ -152,16 +152,18 @@ is a web server again ([`CLAUDE.md`](../CLAUDE.md)).
 
 ```
 cmd/reconcile-checks/                 main: start, the single-instance lock, open the browser, serve
-app/domain/<x>app/                    handlers: writeapp, checksapp, settingsapp, previewapp, signinapp. No rules.
+app/domain/<x>app/                    handlers: writeapp, checksapp, settingsapp (signing in too), previewapp. No rules.
 app/sdk/                              the plumbing under them: muxer, mid, page
 business/domain/check/checkbus/       the rules: numbering, refusing a number twice, void and reprint
 business/domain/check/stores/checkdb/ the register (SQLite)
 business/domain/layout/layoutbus/     placing a check's fields on a stock's layout
-business/sdk/reconcile/               the client for Reconcile's checks routes and its sign-in
+business/domain/signin/signinbus/     signed in or not: the sign-ins begun, the key kept, what it reaches
+business/sdk/reconcile/               the client for Reconcile's checks routes and its sign-in; reconciletest, a fake
 business/types/money/                 an amount in cents, the figures, and the amount in words
 foundation/ipp/                       an IPP client: printer attributes, print a PDF with options, follow the job
 foundation/render/                    placed text and lines to PDF and to PNG; knows nothing of checks
 foundation/selfupdate/                find, verify, stage and swap a release; knows nothing of checks
+foundation/secretstore/               one secret in the system's keychain, or a file only its user reads
 foundation/web/, sqldb/, errs/        as in the sibling projects
 layouts/                              the stock layouts, as data, embedded
 ```

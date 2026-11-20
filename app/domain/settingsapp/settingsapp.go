@@ -6,7 +6,8 @@
 //
 // The printer comes first and stands alone, so that it can be set up and
 // calibrated before there is any account, which is before signing in to
-// Reconcile.
+// Reconcile. Signed in, the accounts come from those Reconcile offers
+// (reconcile.go).
 //
 // Every page that shows a printer asks the printer, then and there: a tray
 // list remembered from last month is the kind of thing that is wrong on the
@@ -31,7 +32,9 @@ import (
 	"github.com/jroedel/reconcile-checks/business/domain/layout/layoutbus"
 	"github.com/jroedel/reconcile-checks/business/domain/print/printbus"
 	"github.com/jroedel/reconcile-checks/business/domain/settings/settingsbus"
+	"github.com/jroedel/reconcile-checks/business/domain/signin/signinbus"
 	"github.com/jroedel/reconcile-checks/business/domain/update/updatebus"
+	"github.com/jroedel/reconcile-checks/business/sdk/reconcile"
 	"github.com/jroedel/reconcile-checks/business/types/money"
 	"github.com/jroedel/reconcile-checks/foundation/ipp"
 	"github.com/jroedel/reconcile-checks/foundation/mdns"
@@ -61,6 +64,11 @@ type Config struct {
 	// the program's own: a check started from the page outlives the request.
 	Updates *updatebus.Business
 	Context context.Context
+
+	// SignIn is signing in to Reconcile; nil hides it. Port is the port
+	// this server is bound to, which Reconcile sends the browser back to.
+	SignIn *signinbus.Business
+	Port   func() string
 }
 
 // App holds the handlers.
@@ -76,6 +84,7 @@ func New(cfg Config) (*App, error) {
 		"calibrating": "templates/calibrating.html",
 		"job":         "templates/job.html",
 		"updating":    "templates/updating.html",
+		"callback":    "templates/callback.html",
 	} {
 		if err := cfg.Render.Add(name, templates, file); err != nil {
 			return nil, err
@@ -100,6 +109,8 @@ type settingsView struct {
 	Saved    string
 	Updated  bool // back from restarting into an update: this version
 	Updates  *updatesView
+
+	Reconcile *reconcileView
 }
 
 // Settings is the overview: about, the printers, the accounts.
@@ -108,8 +119,9 @@ func (a *App) Settings(w http.ResponseWriter, r *http.Request) {
 
 	a.cfg.Render.Render(w, r, http.StatusOK, "settings", settingsView{
 		Settings: s, Error: sentence(err), Config: a.cfg.ConfigFile, Data: a.cfg.DataDir, Saved: r.URL.Query().Get("saved"),
-		Updates: a.updates(),
-		Updated: a.cfg.Updates != nil && r.URL.Query().Get("updated") == a.cfg.Updates.Status().Version,
+		Updates:   a.updates(),
+		Updated:   a.cfg.Updates != nil && r.URL.Query().Get("updated") == a.cfg.Updates.Status().Version,
+		Reconcile: a.reconcile(r.Context(), s),
 	})
 }
 
@@ -486,11 +498,21 @@ type accountView struct {
 	Printers []settingsbus.Printer
 	Error    string
 	Field    string
+
+	// SignedIn is whether Reconcile's accounts can be chosen from; Offered
+	// is those the account may be linked to, and Problem why they couldn't
+	// be asked for.
+	SignedIn bool
+	Offered  []reconcile.Account
+	Problem  string
+	Gone     bool // linked to an account Reconcile no longer offers
 }
 
-// NewAccount is the form for an account this computer will print on.
+// NewAccount is the form for an account this computer will print on: from
+// one of Reconcile's (?reconcile=id), its name and last four filled in, or
+// typed in.
 func (a *App) NewAccount(w http.ResponseWriter, r *http.Request) {
-	acct := settingsbus.Account{Stock: layoutbus.Names()[0]}
+	acct := settingsbus.Account{Stock: layoutbus.Names()[0], ReconcileID: r.URL.Query().Get("reconcile")}
 	a.account(w, r, http.StatusOK, true, acct, nil)
 }
 
@@ -511,10 +533,18 @@ func (a *App) SaveAccount(w http.ResponseWriter, r *http.Request) {
 
 	acct, err := parseAccount(r)
 	if err == nil {
+		was := ""
 		if !isNew {
 			acct.Key = r.PathValue("key")
+			if kept, err := a.cfg.Settings.Account(acct.Key); err == nil {
+				was = kept.ReconcileID
+			}
 		}
-		err = a.cfg.Settings.SaveAccount(acct, isNew)
+
+		err = a.reachable(r.Context(), acct, was)
+		if err == nil {
+			err = a.cfg.Settings.SaveAccount(acct, isNew)
+		}
 	}
 
 	if err != nil {
@@ -571,6 +601,20 @@ func (a *App) account(w http.ResponseWriter, r *http.Request, status int, isNew 
 		v.Account.Printer = s.Printers[0].Name
 	}
 
+	v.SignedIn = a.cfg.SignIn != nil && a.cfg.SignIn.Status().SignedIn
+	v.Offered, v.Problem = a.offered(r.Context(), acct, s)
+	v.Gone = !isNew && v.SignedIn && v.Problem == "" && acct.ReconcileID != "" &&
+		!slices.ContainsFunc(v.Offered, func(o reconcile.Account) bool { return o.ID == acct.ReconcileID })
+
+	// A new account from one of Reconcile's starts with its name, its last
+	// four and a key made from the name, on the first showing of the form.
+	if isNew && failed == nil && acct.ReconcileID != "" && acct.Name == "" {
+		if i := slices.IndexFunc(v.Offered, func(o reconcile.Account) bool { return o.ID == acct.ReconcileID }); i >= 0 {
+			v.Account.Name, v.Account.Last4 = v.Offered[i].Name, v.Offered[i].Last4
+			v.Account.Key = a.cfg.Settings.NewKey(v.Offered[i].Name)
+		}
+	}
+
 	a.cfg.Render.Render(w, r, status, "account", v)
 }
 
@@ -581,6 +625,8 @@ func parseAccount(r *http.Request) (settingsbus.Account, error) {
 		Last4:   r.PostFormValue("last4"),
 		Stock:   r.PostFormValue("stock"),
 		Printer: r.PostFormValue("printer"),
+
+		ReconcileID: strings.TrimSpace(r.PostFormValue("reconcile_id")),
 	}
 
 	if c := strings.TrimSpace(r.PostFormValue("ceiling")); c != "" {
@@ -599,7 +645,7 @@ func (a *App) notFound(w http.ResponseWriter, r *http.Request) {
 
 	a.cfg.Render.Render(w, r, http.StatusNotFound, "settings", settingsView{
 		Settings: s, Error: "There is no such printer or account in Settings.", Config: a.cfg.ConfigFile, Data: a.cfg.DataDir,
-		Updates: a.updates(),
+		Updates: a.updates(), Reconcile: a.reconcile(r.Context(), s),
 	})
 }
 
@@ -613,7 +659,7 @@ func (a *App) fail(w http.ResponseWriter, r *http.Request, err error) {
 
 	a.cfg.Render.Render(w, r, status, "settings", settingsView{
 		Settings: s, Error: sentence(err), Config: a.cfg.ConfigFile, Data: a.cfg.DataDir,
-		Updates: a.updates(),
+		Updates: a.updates(), Reconcile: a.reconcile(r.Context(), s),
 	})
 }
 

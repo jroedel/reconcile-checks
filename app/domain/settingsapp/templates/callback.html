@@ -1,0 +1,14 @@
+{{define "title"}}Signing in · Reconcile Checks{{end}}
+{{define "content"}}
+{{with .Data}}
+{{if .Error}}
+<h1>Not signed in</h1>
+<p class="notice" role="alert">{{.Error}}</p>
+<p><a class="button" href="/settings">Back to Settings</a></p>
+{{else}}
+<h1>Signed in</h1>
+<p role="status">Reconcile has given this computer its key. Back to Settings…</p>
+<p><a class="button" href="{{.Keep}}">Back to Settings</a></p>
+{{end}}
+{{end}}
+{{end}}

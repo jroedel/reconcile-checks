@@ -24,10 +24,14 @@ import (
 	"github.com/jroedel/reconcile-checks/business/domain/print/printbus"
 	"github.com/jroedel/reconcile-checks/business/domain/settings/settingsbus"
 	"github.com/jroedel/reconcile-checks/business/domain/settings/stores/settingsfile"
+	"github.com/jroedel/reconcile-checks/business/domain/signin/signinbus"
 	"github.com/jroedel/reconcile-checks/business/domain/update/updatebus"
+	"github.com/jroedel/reconcile-checks/business/sdk/reconcile"
+	"github.com/jroedel/reconcile-checks/business/sdk/reconcile/reconciletest"
 	"github.com/jroedel/reconcile-checks/foundation/ipp"
 	"github.com/jroedel/reconcile-checks/foundation/ipp/ipptest"
 	"github.com/jroedel/reconcile-checks/foundation/mdns"
+	"github.com/jroedel/reconcile-checks/foundation/secretstore"
 	"github.com/jroedel/reconcile-checks/foundation/sqldb"
 )
 
@@ -42,6 +46,7 @@ type fixture struct {
 	config   string
 	settings *settingsbus.Business
 	checks   *checkbus.Business
+	books    *reconciletest.Server // a Reconcile, with two invented accounts
 }
 
 // finder "finds" the fake printer, as mDNS would find a real one.
@@ -102,6 +107,19 @@ func setup(t *testing.T) *fixture {
 		Accounts: settings.ForChecks(),
 	})
 
+	books := reconciletest.New(
+		reconciletest.Account{ID: "acc1", Name: "Checking A", Last4: "1234", Currency: "USD", Organization: "Parish A"},
+		reconciletest.Account{ID: "acc2", Name: "Checking B", Last4: "5678", Currency: "USD"},
+	)
+	t.Cleanup(books.Close)
+
+	client, err := reconcile.New(books.URL, "v0.0.0-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	signIn := signinbus.New(signinbus.Config{Client: client, Store: secretstore.File(filepath.Join(t.TempDir(), "key")), Device: "Office"})
+
 	h, err := muxer.New(muxer.Config{
 		Log:      log,
 		Version:  "v0.0.0-test",
@@ -118,12 +136,13 @@ func setup(t *testing.T) *fixture {
 		Checks:   checks,
 		Updates:  updatebus.New(updatebus.Config{Version: "v0.0.0-test", Data: t.TempDir()}),
 		Context:  t.Context(),
+		SignIn:   signIn,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	return &fixture{h: h, sessions: sessions, keys: keys, quit: quit, printer: printer, config: config, settings: settings, checks: checks}
+	return &fixture{h: h, sessions: sessions, keys: keys, quit: quit, printer: printer, config: config, settings: settings, checks: checks, books: books}
 }
 
 type req struct {
@@ -205,6 +224,13 @@ func TestTheGates(t *testing.T) {
 		{"a calibration page from another website", req{method: "POST", path: "/settings/printer/calibrate", session: true, site: "cross-site", origin: "https://evil.example", form: f.token()}, http.StatusForbidden},
 		{"a printer that isn't there", req{method: "GET", path: "/settings/printer?name=Nowhere", session: true}, http.StatusNotFound},
 		{"an account that isn't there", req{method: "GET", path: "/settings/accounts/nowhere", session: true}, http.StatusNotFound},
+		{"the callback with a state nobody made", req{method: "GET", path: "/callback?code=x&state=forged&iss=x", site: "cross-site"}, http.StatusBadRequest},
+		{"the callback, rebound name", req{method: "GET", path: "/callback?code=x&state=forged", host: "evil.example:7461"}, http.StatusMisdirectedRequest},
+		{"keeping a key without the session", req{method: "GET", path: "/settings/reconcile/keep?h=x"}, http.StatusUnauthorized},
+		{"keeping a key nobody handed off", req{method: "GET", path: "/settings/reconcile/keep?h=x", session: true}, http.StatusUnprocessableEntity},
+		{"signing in without the session", req{method: "GET", path: "/settings/reconcile/sign-in"}, http.StatusUnauthorized},
+		{"signing out from another website", req{method: "POST", path: "/settings/reconcile/sign-out", session: true, site: "cross-site", origin: "https://evil.example", form: f.token()}, http.StatusForbidden},
+		{"signing out without the session", req{method: "POST", path: "/settings/reconcile/sign-out", site: "same-origin", origin: "http://" + host, form: f.token()}, http.StatusUnauthorized},
 		{"a preview of a payee too long", req{method: "GET", path: "/preview.png?amount=1&payee=" + strings.Repeat("x", 300), session: true}, http.StatusUnprocessableEntity},
 	}
 
@@ -681,5 +707,175 @@ func TestSettingsSaysWhetherThisCopyUpdates(t *testing.T) {
 
 	if page := f.get(t, "/settings/update/status"); !strings.Contains(page, `"state":"idle"`) || !strings.Contains(page, "development build") {
 		t.Errorf("the status for the script: %s", page)
+	}
+}
+
+// signIn goes through signing in as the browser does: Settings' link, to
+// Reconcile, back to /callback without the cookie, and on to keep the key
+// with it.
+func (f *fixture) signIn(t *testing.T) {
+	t.Helper()
+
+	w := f.do(req{method: "GET", path: "/settings/reconcile/sign-in", session: true, site: "same-origin"})
+	if w.Code != http.StatusSeeOther || !strings.HasPrefix(w.Header().Get("Location"), f.books.URL+reconciletest.AuthorizePath+"?") {
+		t.Fatalf("Sign in: %d to %q", w.Code, w.Header().Get("Location"))
+	}
+
+	to, _ := url.Parse(w.Header().Get("Location"))
+	if got := to.Query().Get("redirect_uri"); got != "http://127.0.0.1:7461/callback" {
+		t.Errorf("the redirect sent is %q", got)
+	}
+
+	noFollow := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+
+	resp, err := noFollow.Get(to.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+
+	back, _ := url.Parse(resp.Header.Get("Location"))
+
+	// Back from Reconcile's site, so without the cookie.
+	w = f.do(req{method: "GET", path: back.RequestURI(), site: "cross-site"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("the callback: %d\n%s", w.Code, w.Body)
+	}
+
+	keep, ok := strings.CutPrefix(w.Header().Get("Refresh"), "0; url=")
+	if !ok || !strings.HasPrefix(keep, "/settings/reconcile/keep?h=") || !strings.Contains(w.Body.String(), keep[:20]) {
+		t.Fatalf("the callback moves on to %q", w.Header().Get("Refresh"))
+	}
+
+	// Moved on by its own page, so with the cookie.
+	w = f.do(req{method: "GET", path: keep, session: true, site: "same-origin"})
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/settings?saved=signed-in" {
+		t.Fatalf("keeping the key: %d to %q\n%s", w.Code, w.Header().Get("Location"), w.Body)
+	}
+
+	// The handoff is good once.
+	if w := f.do(req{method: "GET", path: keep, session: true, site: "same-origin"}); w.Code == http.StatusSeeOther {
+		t.Error("the same handoff kept a key twice")
+	}
+}
+
+// Signed in, Settings offers Reconcile's accounts, and one becomes an
+// account here, its name, last four and key filled in; one already here is
+// linked; and signing out forgets the key.
+func TestSigningInAndPrintingOnReconcilesAccounts(t *testing.T) {
+	f := setup(t)
+
+	page := f.get(t, "/settings")
+	if !strings.Contains(page, `href="/settings/reconcile/sign-in">Sign in to Reconcile</a>`) {
+		t.Fatalf("Settings doesn't offer to sign in:\n%s", page)
+	}
+
+	if err := f.settings.SavePrinter("", settingsbus.Printer{Name: "Office", URL: f.printer.URL}); err != nil {
+		t.Fatal(err)
+	}
+
+	f.signIn(t)
+
+	page = f.get(t, "/settings?saved=signed-in")
+	for _, want := range []string{
+		"Signed in to Reconcile.",
+		"as this computer, “Office”",
+		`href="/settings/accounts/new?reconcile=acc1"`,
+		`href="/settings/accounts/new?reconcile=acc2"`,
+		"Parish A",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("Settings, signed in, lacks %q", want)
+		}
+	}
+
+	form := f.get(t, "/settings/accounts/new?reconcile=acc1")
+	for _, want := range []string{`value="checking-a"`, `value="Checking A"`, `value="1234"`, `<option value="acc1" selected>`} {
+		if !strings.Contains(form, want) {
+			t.Errorf("the new account's form lacks %q", want)
+		}
+	}
+
+	account := url.Values{"key": {"checking-a"}, "name": {"Checking A"}, "last4": {"1234"}, "stock": {"walmart-voucher-top"}, "printer": {"Office"}, "reconcile_id": {"acc1"}}
+
+	// An account the key doesn't reach is refused.
+	bogus := url.Values{}
+	for k, v := range account {
+		bogus[k] = v
+	}
+	bogus.Set("reconcile_id", "acc-somebody-elses")
+
+	if w := f.post(t, "/settings/accounts", bogus); w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "doesn&#39;t offer that account") {
+		t.Errorf("an account the key doesn't reach: %d", w.Code)
+	}
+
+	if w := f.post(t, "/settings/accounts", account); w.Code != http.StatusSeeOther {
+		t.Fatalf("adding Reconcile's account: %d\n%s", w.Code, w.Body)
+	}
+
+	if a, _ := f.settings.Account("checking-a"); a.ReconcileID != "acc1" {
+		t.Errorf("the account is linked to %q", a.ReconcileID)
+	}
+
+	page = f.get(t, "/settings")
+	if !strings.Contains(page, "in Reconcile as Checking A") || strings.Contains(page, "new?reconcile=acc1") {
+		t.Errorf("Settings doesn't show the account linked, or still offers it:\n%s", page)
+	}
+
+	// Reconcile away: the account can still be edited, and keeps its link.
+	f.books.SetAccounts()
+	account.Set("name", "Checking A, operating")
+
+	if w := f.post(t, "/settings/accounts/checking-a", account); w.Code != http.StatusSeeOther {
+		t.Fatalf("editing a linked account Reconcile no longer offers: %d\n%s", w.Code, w.Body)
+	}
+
+	if !strings.Contains(f.get(t, "/settings"), "Reconcile no longer offers its account") {
+		t.Error("Settings doesn't say the account is gone from the key")
+	}
+
+	// Revoked on Reconcile: Settings asks to sign in again.
+	f.books.RevokeAll()
+
+	if page := f.get(t, "/settings"); !strings.Contains(page, "Sign in to Reconcile again") {
+		t.Errorf("after the key was revoked, Settings doesn't ask to sign in again:\n%s", page)
+	}
+
+	f.signIn(t)
+
+	if w := f.post(t, "/settings/reconcile/sign-out", url.Values{}); w.Code != http.StatusSeeOther {
+		t.Fatalf("signing out: %d", w.Code)
+	}
+
+	if page := f.get(t, "/settings?saved=signed-out"); !strings.Contains(page, "Signed out of Reconcile on this computer.") || !strings.Contains(page, ">Sign in to Reconcile</a>") {
+		t.Errorf("after signing out:\n%s", page)
+	}
+
+	if a, _ := f.settings.Account("checking-a"); a.ReconcileID != "acc1" {
+		t.Errorf("signing out unlinked the account: %q", a.ReconcileID)
+	}
+}
+
+// The person saying no on Reconcile's page comes back to a page that says
+// so, signed in to nothing.
+func TestASignInTurnedDownSaysSo(t *testing.T) {
+	f := setup(t)
+	f.books.Deny(true)
+
+	w := f.do(req{method: "GET", path: "/settings/reconcile/sign-in", session: true, site: "same-origin"})
+
+	noFollow := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+
+	resp, err := noFollow.Get(w.Header().Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+
+	back, _ := url.Parse(resp.Header.Get("Location"))
+
+	w = f.do(req{method: "GET", path: back.RequestURI(), site: "cross-site"})
+	if w.Code != http.StatusOK || w.Header().Get("Refresh") != "" || !strings.Contains(w.Body.String(), "turned down on Reconcile") {
+		t.Errorf("a sign-in turned down: %d, refresh %q\n%s", w.Code, w.Header().Get("Refresh"), w.Body)
 	}
 }

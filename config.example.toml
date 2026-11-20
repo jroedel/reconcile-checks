@@ -16,6 +16,12 @@
 # with --config, a folder named data beside the config file.
 # data = "data"
 
+# The Reconcile this computer signs in to and sends checks to. Unset: the
+# one the program was built for. With --config (development), unset means
+# none: set it to a Reconcile running on this computer, such as
+# "http://127.0.0.1:8461" from ../reconcile, never the real one.
+# reconcile = "http://127.0.0.1:8461"
+
 # The port the app is served on, on 127.0.0.1 only. If something else holds it,
 # the program uses any free port instead.
 # port = 7461
@@ -50,4 +56,4 @@
 # stock      = "walmart-voucher-top"     # the layout, from layouts/
 # printer    = "Office M612"             # a [[printer]]'s name: its tray, feed and offset are used
 # ceiling    = "10,000.00"               # above it, an amount is asked about again
-# reconcile_id = "…"                     # Reconcile's id, once signed in
+# reconcile_id = "…"                     # Reconcile's id for it, chosen in Settings once signed in

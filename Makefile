@@ -91,7 +91,9 @@ go-check: ## Format, vet, staticcheck, build and test one package (make go-check
 		echo "staticcheck is not installed; run: make dev-tools"; exit 1; \
 	fi
 	@$(GO) build ./...
-	@GO=$(GO) scripts/go-test $(PKG)/...
+	@# -race, as make test-unit and CI run it: a race in a package's own
+	@# tests (found in foundation/mdns) otherwise passes here and fails there.
+	@GO=$(GO) scripts/go-test -race $(PKG)/...
 
 .PHONY: vet
 vet: ## go vet the whole module, for Linux and for Windows

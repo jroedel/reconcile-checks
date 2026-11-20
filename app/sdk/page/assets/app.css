@@ -1,0 +1,254 @@
+/*
+ * One stylesheet for the whole app, served under a hash of itself so it can
+ * be cached for ever (app/sdk/page).
+ *
+ * It starts as a copy of Reconcile's, so that the two read as one family of
+ * tools (docs/12-look-and-voice.md): Reconcile's
+ * app/sdk/page/assets/app/app.css at commit bf82605, its colour tokens and
+ * dark set, base type, masthead, menu, footer, forms and notices, less the
+ * rules only Reconcile has (the place in the masthead, languages, codes,
+ * money, receipts). A change made there later is carried over by hand, in a
+ * pull request that says so.
+ *
+ * System fonts, as Reconcile: a font fetched from somebody else's server
+ * tells them who opened which page, and the page makes no request beyond
+ * 127.0.0.1 (docs/03-the-local-app.md).
+ */
+
+:root {
+	--bg: #fbfaf8;
+	--surface: #ffffff;
+	--ink: #1d1d1b;
+	--muted: #5f5d58;
+	--line: #dedbd4;
+	--accent: #1f5f8b;
+	--accent-ink: #ffffff;
+	--money-in: #1e6b3a;
+	--money-out: #9b2c1f;
+	--warn-bg: #fff4d6;
+	--warn-line: #e0b84f;
+	--ok-bg: #e7f4ea;
+	--ok-line: #7cb98d;
+	--radius: 10px;
+	--gap: 1rem;
+	--measure: 42rem;
+	color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--bg: #151514;
+		--surface: #1e1e1c;
+		--ink: #ecebe7;
+		--muted: #a9a69f;
+		--line: #3a3936;
+		--accent: #6fb0dd;
+		--accent-ink: #0d1b24;
+		--money-in: #7fd39a;
+		--money-out: #f0907f;
+		--warn-bg: #3a3020;
+		--warn-line: #8a6d2a;
+		--ok-bg: #1f3325;
+		--ok-line: #3f7a52;
+	}
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+	-webkit-text-size-adjust: 100%;
+	text-size-adjust: 100%;
+}
+
+body {
+	margin: 0;
+	background: var(--bg);
+	color: var(--ink);
+	font: 1rem/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+	min-height: 100vh;
+	display: flex;
+	flex-direction: column;
+}
+
+main {
+	flex: 1;
+	width: 100%;
+	max-width: var(--measure);
+	margin: 0 auto;
+	padding: var(--gap);
+}
+
+a { color: var(--accent); }
+
+h1, h2, h3 { line-height: 1.2; margin: 1.5rem 0 0.75rem; }
+h1 { font-size: 1.6rem; }
+h2 { font-size: 1.25rem; }
+p { margin: 0 0 1rem; }
+
+
+/* ---------------------------------------------------------------- chrome */
+
+.masthead {
+	position: relative;
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	padding: 0.5rem var(--gap);
+	border-bottom: 1px solid var(--line);
+	background: var(--surface);
+}
+
+.wordmark {
+	flex: none;
+	font-weight: 700;
+	font-size: 1.15rem;
+	letter-spacing: 0.01em;
+	color: var(--ink);
+	text-decoration: none;
+}
+
+.menu { flex: none; margin: 0 0 0 auto; }
+.menu > summary {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 2.75rem;
+	height: 2.75rem;
+	border-radius: var(--radius);
+	color: var(--ink);
+	list-style: none;
+}
+.menu > summary::-webkit-details-marker { display: none; }
+.menu > summary:hover, .menu[open] > summary { background: var(--bg); }
+.menu > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.menu-panel {
+	position: absolute;
+	z-index: 10;
+	top: calc(100% - 0.25rem);
+	right: var(--gap);
+	width: min(18rem, calc(100vw - 2 * var(--gap)));
+	padding: 0.35rem 0;
+	background: var(--surface);
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+	box-shadow: 0 6px 24px rgb(0 0 0 / 0.14);
+}
+.menu-panel nav > a, .menu-panel .menu-out button {
+	display: block;
+	width: 100%;
+	padding: 0.7rem 1rem;
+	color: var(--ink);
+	text-align: left;
+	text-decoration: none;
+}
+.menu-panel nav > a:hover, .menu-panel .menu-out button:hover { background: var(--bg); }
+/* Quit is set apart below a rule, last, where it is not tapped on the way
+ * to something else. */
+.menu-panel .menu-out { margin-top: 0.35rem; border-top: 1px solid var(--line); }
+.menu-panel .menu-out button {
+	min-height: 0;
+	border-radius: 0;
+	background: none;
+	font-weight: inherit;
+	cursor: pointer;
+}
+
+.foot {
+	padding: var(--gap);
+	border-top: 1px solid var(--line);
+	color: var(--muted);
+	font-size: 0.85rem;
+	text-align: center;
+}
+.foot p { margin: 0; }
+
+/* ---------------------------------------------------------------- forms */
+
+label { display: block; font-weight: 600; margin-bottom: 0.25rem; }
+
+input, select, textarea, button { font: inherit; }
+
+input[type="text"], input[type="email"], input[type="number"], input[type="date"],
+input[type="search"], select, textarea {
+	display: block;
+	width: 100%;
+	padding: 0.7rem 0.8rem;
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+	background: var(--surface);
+	color: var(--ink);
+}
+
+/* Big enough to hit without aiming. */
+.button, button {
+	display: inline-block;
+	min-height: 2.9rem;
+	padding: 0.7rem 1.2rem;
+	border: 0;
+	border-radius: var(--radius);
+	background: var(--accent);
+	color: var(--accent-ink);
+	font-weight: 600;
+	text-decoration: none;
+	cursor: pointer;
+}
+
+.button.quiet, button.quiet {
+	background: transparent;
+	color: var(--accent);
+	border: 1px solid var(--line);
+}
+
+/* A button that reads as a link, for a POST that sits in a line of links:
+ * quitting is a write, so it cannot be an <a>. */
+button.link {
+	min-height: 0;
+	padding: 0;
+	background: none;
+	color: var(--accent);
+	font-weight: inherit;
+	text-decoration: underline;
+}
+
+form.inline { display: inline-block; margin: 0 0.5rem 0.5rem 0; }
+
+.aside { margin-top: 2rem; color: var(--muted); }
+.aside p { margin-bottom: 0.5rem; }
+
+.field { margin-bottom: var(--gap); }
+.hint { color: var(--muted); font-size: 0.9rem; margin-top: 0.25rem; }
+
+/* ---------------------------------------------------------------- notices */
+
+.notice {
+	padding: 0.75rem var(--gap);
+	border: 1px solid var(--warn-line);
+	background: var(--warn-bg);
+	border-radius: var(--radius);
+	margin-bottom: var(--gap);
+}
+.notice.ok { border-color: var(--ok-line); background: var(--ok-bg); }
+
+/* ---------------------------------------------------------------- this app */
+
+/*
+ * When the page loses its server -- closed from the menu, after two minutes
+ * with no page open, or the computer slept past them -- it says so, rather
+ * than leaving a form that looks as if it would still work
+ * (docs/03-the-local-app.md, "When it closes"). Hidden until then.
+ */
+.closed {
+	position: sticky;
+	top: 0;
+	z-index: 20;
+	margin: 0;
+	border-radius: 0;
+	border-left: 0;
+	border-right: 0;
+}
+.closed[hidden] { display: none; }
+
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: 0.35rem 1.25rem; margin: 0 0 var(--gap); }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; }

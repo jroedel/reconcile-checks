@@ -1,0 +1,91 @@
+# The checks on every pull request and every push to main, on Linux and on
+# Windows (docs/10-install-update-and-releases.md, "Checks on every pull
+# request").
+#
+# Windows is a real Windows machine (GitHub's hosted windows-latest), not a
+# container: the program is built for Windows and runs there, so the lock, the
+# console attach and the second-start hand-off are tested where they will run.
+# Printing can't be tested anywhere; the request a printer receives can, and
+# will be, once there is one to send.
+#
+# Actions are pinned by commit, with the version beside it; Dependabot moves
+# both together (.github/dependabot.yml). The SHAs are the ones stewards uses.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+  # For go-version.yml: a pull request opened with the repository's own token
+  # starts no workflow, so that workflow starts this one on its branch.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          # From go.mod, so the toolchain in CI is the one the module declares
+          # and there is no second place to bump.
+          go-version-file: go.mod
+          cache: true
+
+      - name: lint (vet for Linux and Windows, gofmt)
+        run: make lint
+
+      - name: go.mod and go.sum are tidy
+        run: make tidy-check
+
+      - name: unit tests, with the race detector
+        run: make test-unit
+
+      - name: every target system builds
+        run: make cross
+
+      - name: vulnerability scan
+        run: make vuln-check
+
+      - name: the release binaries build
+        run: make release-all VERSION=v0.0.0-ci && make checksums && ls -l dist
+
+  windows:
+    runs-on: windows-latest
+
+    # Git Bash, so scripts/go-test runs as it does on Linux. make is not on
+    # the runner, so the steps call go directly.
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: vet
+        run: go vet ./...
+
+      - name: unit tests, with the race detector
+        run: GO=go scripts/go-test -race ./...
+
+      - name: the GUI build, as released, starts and answers version
+        run: |
+          go build -ldflags='-s -w -X main.version=v0.0.0-ci -H windowsgui' -o rc.exe ./cmd/reconcile-checks
+          out=$(./rc.exe version)
+          echo "$out"
+          [[ "$out" == "reconcile-checks v0.0.0-ci windows/amd64 "* ]] || { echo "the GUI build did not print its version"; exit 1; }

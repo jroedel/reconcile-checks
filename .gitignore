@@ -4,6 +4,7 @@
 # Compiled binaries, named after the module in the repository root.
 /reconcile-checks
 /reconcile-checks-*
+/dist/
 *.exe
 *.test
 *.out
@@ -21,6 +22,9 @@ coverage.*
 # Configuration and keys. The example config is tracked and is the
 # documentation; a real one never is.
 config.toml
+# `make run`'s data folder, beside ./config.toml: a register of whatever was
+# typed into it.
+/data/
 !config.example.toml
 key
 *.key
@@ -43,6 +47,8 @@ key
 *.webp
 *.heic
 !**/testdata/**/*.png
+# The app's own icon, drawn by scripts/icons (docs/12-look-and-voice.md).
+!/app/sdk/page/assets/img/*.png
 !**/testdata/**/*.pdf
 exports/
 

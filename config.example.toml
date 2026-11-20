@@ -1,0 +1,27 @@
+# Reconcile Checks' settings, documented. The real file is config.toml:
+#
+#   Linux    ~/.config/reconcile-checks/config.toml
+#   Windows  %AppData%\reconcile-checks\config.toml
+#
+# Every setting has a default, so the program runs with no file at all. Later
+# versions will write this file from the Settings page (printers, accounts,
+# offsets); when they do, comments written into it by hand do not survive.
+#
+# For development: `make run` uses ./config.toml, whose data folder is ./data
+# unless set below -- never the real register (CLAUDE.md, section 6).
+
+# Where the register, the lock, runtime.json and the log live. A relative
+# folder is relative to this file. Unset: the system's place for it
+# (~/.local/share/reconcile-checks, or %LocalAppData%\reconcile-checks), or,
+# with --config, a folder named data beside the config file.
+# data = "data"
+
+# The port the app is served on, on 127.0.0.1 only. If something else holds it,
+# the program uses any free port instead.
+# port = 7461
+
+# How long the program waits with no page open before it closes.
+# close_after = "2m"
+
+# debug, info, warn or error.
+# log_level = "info"

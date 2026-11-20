@@ -110,13 +110,15 @@ declaration of an identifier, which is what gopls is exact about.
 ```sh
 make test-unit     # the tests, with -race. No network, no printer.
 make lint          # go vet + gofmt check
-make test          # both, plus the golden tests and the JavaScript tests
-make vuln-check    # govulncheck. Needs the network.
+make test          # both (the golden tests and JavaScript tests join it as they arrive)
+make vuln-check    # govulncheck, under go.mod's Go release. Needs the network.
 make go-check PKG= # the after-editing-Go loop, on one package
-make test-js       # the JavaScript, under Node's own test runner
-make test-browser  # the pages in headless Chrome, against a server on a test config
 make cross         # builds for every target, so a Windows-only break shows here
-make selfupdate-e2e # the self-update cases in Docker, against a fake GitHub
+make icons         # redraws the icon and the Windows resource that carries it
+# Arriving later, with what they test:
+make selfupdate-e2e # the self-update cases in Docker, against a fake GitHub (with self-update)
+make test-js       # the JavaScript, under Node's own test runner (with the Write a check page)
+make test-browser  # the pages in headless Chrome, against a server on a test config (with the Write a check page)
 ```
 
 `make test-unit` counts the passing packages instead of listing them, so **there

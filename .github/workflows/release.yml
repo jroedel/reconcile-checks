@@ -1,0 +1,284 @@
+# Push to deploy (docs/10-install-update-and-releases.md): every merge to
+# main that changes the program becomes a signed release, and both computers
+# update to it by themselves. Nobody tags, nobody uploads.
+#
+# Ported from sion-backup's release.yml: the draft found by id and tag_name,
+# stale drafts deleted, every file in dist/ attached and checked, published by
+# PATCH. What differs is said where it is: the trigger (a merge, not a tag),
+# the version worked out here, the signature, and the gates.
+#
+# Actions are pinned by commit, with the version beside it, as in ci.yml.
+name: Release
+
+on:
+  push:
+    branches: [main]
+    # A merge that changes no program builds nothing a computer could
+    # receive.
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+      - '.claude/**'
+
+# Only this workflow writes, and only releases.
+permissions:
+  contents: write
+
+# One release at a time, in order: two merges close together are two
+# releases, the second built on the first's version, never at once.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  # Until a person makes the key and commits its public half, a merge
+  # releases nothing, and says so as a warning rather than a failure: builds
+  # without a key never update, so a release of one would strand whoever
+  # installed it.
+  ready:
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.key.outputs.go }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: is there a release key?
+        id: key
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          if [ ! -s release-key.pub ]; then
+            echo "::warning::No release-key.pub on main yet, so nothing is released."
+            echo "::warning::A person makes the key: make release-keygen (docs/10, \"The release signing key\")."
+            echo "go=no" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ -z "$RELEASE_SIGNING_KEY" ]; then
+            echo "::error::release-key.pub is on main, but the secret RELEASE_SIGNING_KEY is not set."
+            echo "::error::A person runs make release-send-secret."
+            exit 1
+          fi
+
+          echo "go=yes" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: ready
+    if: needs.ready.outputs.go == 'yes'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # The latest published release (GitHub's /latest leaves drafts and
+      # pre-releases out), and the labels of the pull request this merge came
+      # from. A commit already released is not released twice: a re-run of
+      # this workflow after it published finds its own release here.
+      - name: the version
+        id: version
+        run: |
+          # No release yet is a 404, and the first release. Any other failure
+          # stops here: taking a GitHub outage for "no release yet" would
+          # publish v0.1.0 over a later version.
+          if latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.tag_name + " " + .target_commitish' 2>"$RUNNER_TEMP/latest.err"); then
+            tag=${latest%% *}
+            target=${latest#* }
+          elif grep -q "Not Found" "$RUNNER_TEMP/latest.err"; then
+            tag=""
+            target=""
+          else
+            cat "$RUNNER_TEMP/latest.err"
+            echo "::error::couldn't ask GitHub for the latest release; re-run this workflow."
+            exit 1
+          fi
+
+          if [ -n "$tag" ] && [ "$target" = "$GITHUB_SHA" ]; then
+            echo "::notice::$GITHUB_SHA is already released, as $tag."
+            echo "version=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          labels=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" --jq '[.[0].labels[].name] | join(",")' 2>/dev/null) || labels=""
+          version=$(go run ./scripts/releaseversion -latest "$tag" -labels "$labels")
+
+          echo "::notice::releasing $version (after ${tag:-no release}; labels: ${labels:-none})"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "previous=$tag" >> "$GITHUB_OUTPUT"
+
+      # The checks again, on the merged commit: CI ran on the pull request's,
+      # which a merge can change.
+      - name: the checks, on the merged commit
+        if: steps.version.outputs.version != ''
+        run: |
+          make lint
+          make test-unit
+
+      - name: build every target
+        if: steps.version.outputs.version != ''
+        run: make release-all VERSION=${{ steps.version.outputs.version }}
+
+      - name: checksums, signed
+        if: steps.version.outputs.version != ''
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          make checksums
+          go run ./scripts/releasekey sign dist/SHA256SUMS
+
+          # Against the committed public half: a secret that isn't its pair
+          # would publish a release no computer will install.
+          go run ./scripts/releasekey verify dist/SHA256SUMS
+
+      # Gate: every binary carries the real key. A build with none, or with a
+      # test key, would install and then never update again.
+      - name: gate - the binaries carry the release key
+        if: steps.version.outputs.version != ''
+        run: |
+          want=$(go run ./scripts/releasekey fingerprint)
+          got=$(dist/reconcile-checks-linux-amd64 version)
+          echo "$got"
+
+          [[ "$got" == "reconcile-checks ${{ steps.version.outputs.version }} linux/amd64 "*" $want" ]] || {
+            echo "::error::the Linux binary reports \"$got\"; it must be ${{ steps.version.outputs.version }} with $want"
+            exit 1
+          }
+
+          # The Windows binary can't run here; the key is stamped into it as
+          # the same text.
+          grep -q "$(tr -d '\n' < release-key.pub)" dist/reconcile-checks-windows-amd64.exe || {
+            echo "::error::the Windows binary doesn't carry release-key.pub"
+            exit 1
+          }
+
+      # Gate: every way a release can be broken leaves a computer alone, and
+      # a good one installs and restarts itself (throwaway key).
+      - name: gate - self-update, end to end
+        if: steps.version.outputs.version != ''
+        run: make selfupdate-e2e
+
+      # Gate: the previous published release, as it was downloaded, updates
+      # itself to this one, by `update` and by itself while running, over TLS
+      # to a fake GitHub serving this release signed with the real key.
+      - name: gate - the previous release updates to this one
+        if: steps.version.outputs.version != ''
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          previous=${{ steps.version.outputs.previous }}
+
+          if [ -z "$previous" ]; then
+            echo "::warning::This is the first release: there is no previous one to update from."
+            exit 0
+          fi
+
+          mkdir -p "$RUNNER_TEMP/previous"
+          gh release download "$previous" -p reconcile-checks-linux-amd64 -D "$RUNNER_TEMP/previous"
+          chmod +x "$RUNNER_TEMP/previous/reconcile-checks-linux-amd64"
+
+          key="$RUNNER_TEMP/release.key"
+          ( umask 077; printf '%s' "$RELEASE_SIGNING_KEY" > "$key" )
+          trap 'rm -f "$key"' EXIT
+
+          scripts/selfupdate-e2e/run \
+            --previous "$RUNNER_TEMP/previous/reconcile-checks-linux-amd64" \
+            --candidate dist/reconcile-checks-linux-amd64 \
+            --key "$key"
+
+      - name: the release notes
+        if: steps.version.outputs.version != ''
+        run: |
+          cat > "$RUNNER_TEMP/notes.md" <<'NOTES'
+          ## Installing
+
+          A computer that already has Reconcile Checks updates itself to this
+          release the next time the program is opened. Nothing to do.
+
+          On a new computer, download the file for it and run it once:
+
+          - **Windows**: `reconcile-checks-windows-amd64.exe`. Windows says
+            *"Windows protected your PC"* the first time: **More info → Run
+            anyway**.
+          - **Linux**: `reconcile-checks-linux-amd64`; `chmod +x` it, then run
+            it.
+
+          `SHA256SUMS` lists every file's hash, and `SHA256SUMS.sig` is its
+          signature by the release key, which the program checks before it
+          installs an update.
+
+          ---
+          NOTES
+
+      # A DRAFT, created only now that every gate has passed, and invisible
+      # to every computer until it is published: GitHub leaves drafts out of
+      # /releases/latest, and the updater checks again.
+      #
+      # A draft has no tag until it is published, so it is found by id and
+      # tag_name, never by tag; and GitHub allows several drafts with one
+      # tag_name, so a re-run deletes the one it left before making another.
+      - name: draft the release
+        if: steps.version.outputs.version != ''
+        run: |
+          version=${{ steps.version.outputs.version }}
+
+          gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq ".[] | select(.tag_name == \"$version\") | \"\(.id) \(.draft)\"" |
+          while read -r id draft; do
+            [ -n "$id" ] || continue
+
+            if [ "$draft" = false ]; then
+              echo "::error::$version is already published. Refusing to rebuild a release a computer may be running."
+              exit 1
+            fi
+
+            echo "::notice::removing a stale draft for $version (id $id)"
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/$id"
+          done
+
+          # Everything in dist/, not a list of patterns: what the build makes
+          # is what the release carries, and SHA256SUMS covers it all.
+          gh release create "$version" \
+            --draft \
+            --target "$GITHUB_SHA" \
+            --title "$version" \
+            --generate-notes \
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            dist/*
+
+      - name: gate - every file built is attached
+        if: steps.version.outputs.version != ''
+        run: |
+          version=${{ steps.version.outputs.version }}
+
+          id=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+                 --jq ".[] | select(.tag_name == \"$version\" and .draft) | .id" | head -1)
+
+          [ -n "$id" ] || { echo "::error::no draft for $version"; exit 1; }
+
+          gh api "repos/$GITHUB_REPOSITORY/releases/$id/assets" --paginate --jq '.[].name' | sort > "$RUNNER_TEMP/attached.txt"
+          ls -1 dist/ | sort > "$RUNNER_TEMP/built.txt"
+
+          diff -u "$RUNNER_TEMP/built.txt" "$RUNNER_TEMP/attached.txt" || {
+            echo "::error::the draft does not carry what the build made (- built, + attached)"
+            exit 1
+          }
+
+          echo "id=$id" >> "$GITHUB_ENV"
+
+      # Only now can a computer see it. Publishing is what makes the tag.
+      - name: publish
+        if: steps.version.outputs.version != ''
+        run: |
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$id" \
+            -F draft=false -f tag_name="${{ steps.version.outputs.version }}" >/dev/null
+
+          echo "::notice::published ${{ steps.version.outputs.version }}; both computers update to it at their next start."

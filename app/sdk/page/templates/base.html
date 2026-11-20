@@ -13,7 +13,7 @@
 <link rel="icon" type="image/svg+xml" href="{{.IconSVG}}">
 <link rel="icon" type="image/png" sizes="32x32" href="{{.Icon32}}">
 {{if .Session}}<script type="module" src="{{.Script}}"></script>
-{{end}}</head>
+{{end}}{{block "head" .}}{{end}}</head>
 <body>
 <p class="notice closed" id="closed" role="status" hidden>Reconcile Checks has closed. Open it again from its shortcut.</p>
 <header class="masthead">
@@ -22,7 +22,8 @@
 <summary aria-label="Menu"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></summary>
 <div class="menu-panel">
 <nav aria-label="Reconcile Checks">
-<a href="/">Home</a>
+<a href="/">Write a check</a>
+<a href="/checks">Checks</a>
 <a href="/settings">Settings</a>
 </nav>
 <form method="post" action="/quit" class="menu-out"><input type="hidden" name="form_token" value="{{.FormToken}}"><button type="submit">Quit</button></form>

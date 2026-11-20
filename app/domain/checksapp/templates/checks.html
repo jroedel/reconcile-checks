@@ -1,0 +1,29 @@
+{{define "title"}}Checks · Reconcile Checks{{end}}
+{{define "content"}}
+{{with .Data}}
+<h1>Checks</h1>
+{{if .Error}}<p class="notice" role="alert">{{.Error}}</p>{{end}}
+<p>
+<a href="/checks"{{if eq .Show "all"}} aria-current="page"{{end}}>All</a> ·
+<a href="/checks?show=unsent"{{if eq .Show "unsent"}} aria-current="page"{{end}}>Waiting for Reconcile ({{.Unsent}})</a> ·
+<a href="/checks?show=void"{{if eq .Show "void"}} aria-current="page"{{end}}>Void</a>
+</p>
+{{if .Checks}}
+<table class="register">
+<thead><tr><th>No.</th><th>Date</th><th>Pay to</th><th class="num">Amount</th><th>Memo</th><th></th></tr></thead>
+<tbody>
+{{range .Checks}}<tr{{if eq .State "void"}} class="void"{{end}}>
+<td><a href="/checks/{{.Account}}/{{.Number}}">{{.Number}}</a></td>
+<td>{{.WrittenOn.Format "Jan 2, 2006"}}</td>
+<td>{{.Payee}}</td>
+<td class="num">{{.Amount}}</td>
+<td>{{.Memo}}</td>
+<td>{{if eq .State "void"}}void{{else if eq .State "printing"}}not answered{{else if .Send.SentAt.IsZero}}not sent{{end}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+{{else}}
+<p>No checks{{if ne .Show "all"}} here{{end}} yet.</p>
+{{end}}
+{{end}}
+{{end}}

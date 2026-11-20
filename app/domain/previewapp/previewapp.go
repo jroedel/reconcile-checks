@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/jroedel/reconcile-checks/business/domain/layout/layoutbus"
+	"github.com/jroedel/reconcile-checks/business/domain/settings/settingsbus"
 	"github.com/jroedel/reconcile-checks/business/types/money"
 	"github.com/jroedel/reconcile-checks/foundation/render"
 )
@@ -29,26 +30,35 @@ const (
 	wholeDPI = 90
 )
 
+// Accounts says which stock an account prints on, and its last four for the
+// image (settingsbus).
+type Accounts interface {
+	Account(key string) (settingsbus.Account, error)
+}
+
 // Config is what the app needs.
 type Config struct {
-	// Stock is the layout to draw on. One for now; per account once there are
-	// accounts (docs/02-architecture.md, "The config, sketched").
+	// Stock is the layout drawn on when no account is named, or the one
+	// named isn't there.
 	Stock string
+
+	Accounts Accounts
 }
 
 // App holds the handlers.
 type App struct {
+	cfg    Config
 	layout layoutbus.Layout
 }
 
-// New loads the layout.
+// New loads the default layout.
 func New(cfg Config) (*App, error) {
 	l, err := layoutbus.Load(cfg.Stock)
 	if err != nil {
 		return nil, err
 	}
 
-	return &App{layout: l}, nil
+	return &App{cfg: cfg, layout: l}, nil
 }
 
 // Preview answers GET /preview.png.
@@ -57,8 +67,10 @@ func New(cfg Config) (*App, error) {
 //	payee, amount, memo, note
 //	number    the check number, drawn where the stock prints it
 //	whole     1 for the whole page with both stubs; otherwise the check alone
+//	account   the account's key: its stock, and its last four on the image
 func (a *App) Preview(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
+	layout := a.layout
 
 	c := layoutbus.Check{
 		Date:     time.Now(),
@@ -89,6 +101,15 @@ func (a *App) Preview(w http.ResponseWriter, r *http.Request) {
 		c.Number = n
 	}
 
+	if key := q.Get("account"); key != "" && a.cfg.Accounts != nil {
+		if acct, err := a.cfg.Accounts.Account(key); err == nil {
+			if l, err := layoutbus.Load(acct.Stock); err == nil {
+				layout = l
+			}
+			c.Last4 = acct.Last4
+		}
+	}
+
 	var (
 		doc  render.Doc
 		area render.Area
@@ -97,10 +118,10 @@ func (a *App) Preview(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if q.Get("whole") == "1" {
-		doc, err = a.layout.Preview(c)
+		doc, err = layout.Preview(c)
 		area, dpi = doc.Whole(), wholeDPI
 	} else {
-		doc, area, err = a.layout.Image(c)
+		doc, area, err = layout.Image(c)
 		dpi = faceDPI
 	}
 

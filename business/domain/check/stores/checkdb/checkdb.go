@@ -319,6 +319,11 @@ func (s *Store) InState(ctx context.Context, st checkbus.State) ([]checkbus.Chec
 	return s.list(ctx, `WHERE state = ? ORDER BY created_at, number`, string(st))
 }
 
+// Latest is the last n checks on every account, the most recent first.
+func (s *Store) Latest(ctx context.Context, n int) ([]checkbus.Check, error) {
+	return s.list(ctx, `ORDER BY created_at DESC, number DESC LIMIT ?`, n)
+}
+
 // Unsent is every check Reconcile doesn't have yet, oldest first. A check
 // still printing waits for its answer: until then it is neither a check nor a
 // void.

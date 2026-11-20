@@ -18,6 +18,9 @@ import (
 	"github.com/jroedel/reconcile-checks/app/sdk/muxer"
 	"github.com/jroedel/reconcile-checks/app/sdk/page"
 	"github.com/jroedel/reconcile-checks/app/sdk/presence"
+	"github.com/jroedel/reconcile-checks/business/domain/check/checkbus"
+	"github.com/jroedel/reconcile-checks/business/domain/check/stores/checkdb"
+	"github.com/jroedel/reconcile-checks/business/domain/check/stores/checkfiles"
 	"github.com/jroedel/reconcile-checks/business/domain/print/printbus"
 	"github.com/jroedel/reconcile-checks/business/domain/settings/settingsbus"
 	"github.com/jroedel/reconcile-checks/business/domain/settings/stores/settingsfile"
@@ -36,6 +39,8 @@ type fixture struct {
 	quit     chan struct{}
 	printer  *ipptest.Server
 	config   string
+	settings *settingsbus.Business
+	checks   *checkbus.Business
 }
 
 // finder "finds" the fake printer, as mDNS would find a real one.
@@ -70,6 +75,10 @@ func setup(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 
+	if err := checkdb.Init(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+
 	keys := mid.NewKeys()
 	sessions := mid.New(keys)
 
@@ -86,6 +95,12 @@ func setup(t *testing.T) *fixture {
 	config := filepath.Join(t.TempDir(), "config.toml")
 	settings := settingsbus.New(settingsfile.New(config))
 
+	checks := checkbus.New(checkbus.Config{
+		Store:    checkdb.NewStore(db),
+		Files:    checkfiles.New(filepath.Join(t.TempDir(), "checks")),
+		Accounts: settings.ForChecks(),
+	})
+
 	h, err := muxer.New(muxer.Config{
 		Log:      log,
 		Version:  "v0.0.0-test",
@@ -99,12 +114,13 @@ func setup(t *testing.T) *fixture {
 		Settings: settings,
 		Print:    printbus.New(settings, &ipp.Client{User: "reconcile-checks"}),
 		Finder:   finder{printer},
+		Checks:   checks,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	return &fixture{h: h, sessions: sessions, keys: keys, quit: quit, printer: printer, config: config}
+	return &fixture{h: h, sessions: sessions, keys: keys, quit: quit, printer: printer, config: config, settings: settings, checks: checks}
 }
 
 type req struct {
@@ -382,5 +398,185 @@ func TestSettingUpAnAccountAndPrintingTheCalibrationPage(t *testing.T) {
 
 	if page := get("/settings"); !strings.Contains(page, "Checking A") || !strings.Contains(page, "Office M612") {
 		t.Errorf("the overview doesn't list the account and printer:\n%s", page)
+	}
+}
+
+// post is a write from one of this server's own pages.
+func (f *fixture) post(t *testing.T, path string, form url.Values) *httptest.ResponseRecorder {
+	t.Helper()
+
+	for k, v := range f.token() {
+		form[k] = v
+	}
+
+	return f.do(req{method: "POST", path: path, session: true, site: "same-origin", origin: "http://" + host, form: form})
+}
+
+func (f *fixture) get(t *testing.T, path string) string {
+	t.Helper()
+
+	w := f.do(req{method: "GET", path: path, session: true})
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET %s: %d\n%s", path, w.Code, w.Body)
+	}
+
+	return w.Body.String()
+}
+
+// account sets up the fake printer and an invented account on it.
+func (f *fixture) account(t *testing.T) {
+	t.Helper()
+
+	if err := f.settings.SavePrinter("", settingsbus.Printer{Name: "Office", URL: f.printer.URL}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := f.settings.SaveAccount(settingsbus.Account{
+		Key: "checking-a", Name: "Checking A", Last4: "1234", Stock: "walmart-voucher-top",
+		Printer: "Office", Tray: "tray-1", MediaType: "stationery-preprinted", Feed: "face down",
+	}, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// answers is the questions' answers the page carries, as it carries them.
+func answers(page string) []string {
+	var out []string
+	for _, part := range strings.Split(page, `name="answered" value="`)[1:] {
+		v, _, _ := strings.Cut(part, `"`)
+		out = append(out, strings.ReplaceAll(v, "&#43;", "+"))
+	}
+
+	return out
+}
+
+// An invented check (CLAUDE.md, "This repository is public").
+func check(number string) url.Values {
+	return url.Values{
+		"account": {"checking-a"}, "number": {number}, "date": {time.Now().Format(time.DateOnly)},
+		"payee": {"Payee A Plumbing"}, "amount": {"1234.50"}, "memo": {"Kitchen drain repair"},
+		"stub_note": {"Invoice 8812"},
+	}
+}
+
+// A check is written, asked about, printed, confirmed; the next is jammed,
+// voided and reprinted; the register shows both; and every way printing can
+// fail leaves the register telling the truth.
+func TestWritingAndPrintingAChecksThroughThePages(t *testing.T) {
+	f := setup(t)
+	f.account(t)
+
+	if page := f.get(t, "/"); !strings.Contains(page, "ending 1234") || !strings.Contains(page, "On Office, tray-1: face down.") {
+		t.Fatalf("the form doesn't show the account:\n%s", page)
+	}
+
+	// A payee never paid is asked about, and nothing is printed until it is
+	// answered.
+	w := f.post(t, "/checks", check("1043"))
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "Payee A Plumbing is new. Keep it?") {
+		t.Fatalf("not asked about the new payee: %d\n%s", w.Code, w.Body)
+	}
+
+	if n := len(f.printer.Printed()); n != 0 {
+		t.Fatalf("%d checks printed before the question was answered", n)
+	}
+
+	yes := check("1043")
+	yes["answered"] = answers(w.Body.String())
+
+	// An answer is about what was asked: a changed payee is asked about anew.
+	other := check("1043")
+	other["payee"] = []string{"Payee B Gardening"}
+	other["answered"] = yes["answered"]
+	if w := f.post(t, "/checks", other); !strings.Contains(w.Body.String(), "Payee B Gardening is new.") {
+		t.Errorf("an answer about one payee was taken for another")
+	}
+
+	w = f.post(t, "/checks", yes)
+	if w.Code != http.StatusSeeOther || !strings.HasPrefix(w.Header().Get("Location"), "/checks/checking-a/1043/printing?") {
+		t.Fatalf("printing 1043: %d %s\n%s", w.Code, w.Header().Get("Location"), w.Body)
+	}
+
+	printed := f.printer.Printed()
+	if len(printed) != 1 || printed[0].Operation["job-name"][0] != "Check 1043" {
+		t.Fatalf("the printer got %d jobs, named %q", len(printed), printed[0].Operation["job-name"])
+	}
+
+	if page := f.get(t, w.Header().Get("Location")); !strings.Contains(page, "Did it print correctly?") || !strings.Contains(page, "has printed it") {
+		t.Errorf("the printing page:\n%s", page)
+	}
+
+	w = f.post(t, "/checks/checking-a/1043/printed", url.Values{})
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("yes: %d\n%s", w.Code, w.Body)
+	}
+
+	if page := f.get(t, w.Header().Get("Location")); !strings.Contains(page, "Check 1043 printed.") || !strings.Contains(page, `value="1044"`) {
+		t.Errorf("after yes, the form doesn't propose 1044:\n%s", page)
+	}
+
+	// The next one jams, and is voided and reprinted on the number after.
+	if w := f.post(t, "/checks", check("1044")); w.Code != http.StatusSeeOther {
+		t.Fatalf("printing 1044: %d\n%s", w.Code, w.Body)
+	}
+
+	w = f.post(t, "/checks/checking-a/1044/reprint", url.Values{"reason": {"jam"}})
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("no: %d\n%s", w.Code, w.Body)
+	}
+
+	page := f.get(t, w.Header().Get("Location"))
+	if !strings.Contains(page, "Check 1044 is void.") || !strings.Contains(page, `value="1045"`) ||
+		!strings.Contains(page, `value="Payee A Plumbing"`) || !strings.Contains(page, `name="reprint_of" value="1044"`) {
+		t.Errorf("the reprint form:\n%s", page)
+	}
+
+	// The register.
+	list := f.get(t, "/checks")
+	if !strings.Contains(list, ">1043<") || !strings.Contains(list, ">1044<") || !strings.Contains(list, `class="void"`) {
+		t.Errorf("the register:\n%s", list)
+	}
+
+	if page := f.get(t, "/checks/checking-a/1043"); !strings.Contains(page, "Waiting to be sent to Reconcile.") {
+		t.Errorf("check 1043's page:\n%s", page)
+	}
+
+	if w := f.do(req{method: "GET", path: "/checks/checking-a/1043/image.png", session: true}); w.Code != http.StatusOK || w.Header().Get("Content-Type") != "image/png" {
+		t.Errorf("the image: %d %s", w.Code, w.Header().Get("Content-Type"))
+	}
+
+	// 1043 was really 1042 on the paper.
+	if w := f.post(t, "/checks/checking-a/1043/renumber", url.Values{"to": {"1042"}}); w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/checks/checking-a/1042?done=renumbered" {
+		t.Errorf("renumbering: %d %s", w.Code, w.Header().Get("Location"))
+	}
+
+	// A printer that refuses: nothing printed, and the number given back.
+	f.printer.Refuse("print-scaling")
+
+	w = f.post(t, "/checks", check("1045"))
+	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "Nothing was printed.") {
+		t.Errorf("a refused job: %d\n%s", w.Code, w.Body)
+	}
+
+	if _, err := f.checks.Get(t.Context(), "checking-a", 1045); err == nil {
+		t.Error("a check the printer refused kept its number")
+	}
+
+	// A printer that stops answering mid-job: the check may be on paper, so it
+	// stays, and the person is asked.
+	f.printer.Refuse("")
+	f.printer.DropAfter("Print-Job")
+
+	w = f.post(t, "/checks", check("1045"))
+	if w.Code != http.StatusSeeOther || !strings.Contains(w.Header().Get("Location"), "uncertain=1") {
+		t.Fatalf("an uncertain job: %d %s\n%s", w.Code, w.Header().Get("Location"), w.Body)
+	}
+
+	if page := f.get(t, w.Header().Get("Location")); !strings.Contains(page, "may or may not have printed") {
+		t.Errorf("the uncertain page:\n%s", page)
+	}
+
+	if page := f.get(t, "/"); !strings.Contains(page, "Check 1045 to Payee A Plumbing was sent to the printer, and nobody said") {
+		t.Errorf("the form doesn't ask about the unanswered check:\n%s", page)
 	}
 }

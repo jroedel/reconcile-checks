@@ -204,7 +204,7 @@ func TestTheRegisterSeesTheAccount(t *testing.T) {
 	}
 
 	got, err := b.CheckAccount("checking-a")
-	if err != nil || got != (checkbus.Account{Key: "checking-a", Last4: "1234", Stock: "walmart-voucher-top", Ceiling: 2_500_00}) {
+	if err != nil || got != (checkbus.Account{Key: "checking-a", Last4: "1234", Stock: "walmart-voucher-top", Ceiling: 2_500_00, OffsetX: 0.4, OffsetY: -0.6}) {
 		t.Errorf("CheckAccount: %+v (%v)", got, err)
 	}
 

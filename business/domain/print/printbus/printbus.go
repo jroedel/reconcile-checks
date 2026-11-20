@@ -3,9 +3,8 @@
 // every option that decides where ink lands stated in the job
 // (docs/05-printing.md, "Options set by the program, every time").
 //
-// Today that is the calibration page. A check joins it with the Write a check
-// page: the register (checkbus) claims the number and makes the PDF, and this
-// package sends it.
+// That is the calibration page, and a check: the register (checkbus) claims
+// the number and makes the check's PDF, and this package sends it.
 package printbus
 
 import (
@@ -73,17 +72,37 @@ func (b *Business) Calibrate(ctx context.Context, key string) (Sent, error) {
 		return Sent{}, err
 	}
 
-	return b.send(ctx, a, l, l.Calibration(), "Calibration page")
-}
-
-// send shifts the page by the account's offset and prints it.
-func (b *Business) send(ctx context.Context, a settingsbus.Account, l layoutbus.Layout, page render.Doc, name string) (Sent, error) {
-	p, err := b.settings.Printer(a.Printer)
+	pdf, err := render.PDF(l.Calibration().Shift(a.Offset.X, a.Offset.Y))
 	if err != nil {
 		return Sent{}, err
 	}
 
-	pdf, err := render.PDF(page.Shift(a.Offset.X, a.Offset.Y))
+	return b.send(ctx, a, l, pdf, "Calibration page")
+}
+
+// Check prints a check's PDF as the register made it, the account's offset
+// already in it (checkbus.Write). The job is named by the number alone: a
+// printer's panel and job log are not where a payee belongs.
+//
+// An ipp.Uncertain error is a check that may have printed; anything else is
+// one that certainly didn't.
+func (b *Business) Check(ctx context.Context, key string, number int, pdf []byte) (Sent, error) {
+	a, err := b.settings.Account(key)
+	if err != nil {
+		return Sent{}, err
+	}
+
+	l, err := layoutbus.Load(a.Stock)
+	if err != nil {
+		return Sent{}, err
+	}
+
+	return b.send(ctx, a, l, pdf, fmt.Sprintf("Check %d", number))
+}
+
+// send prints the PDF on the account's printer, with the account's options.
+func (b *Business) send(ctx context.Context, a settingsbus.Account, l layoutbus.Layout, pdf []byte, name string) (Sent, error) {
+	p, err := b.settings.Printer(a.Printer)
 	if err != nil {
 		return Sent{}, err
 	}

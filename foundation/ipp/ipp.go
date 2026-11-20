@@ -99,6 +99,19 @@ func (e Unreachable) Error() string {
 
 func (e Unreachable) Unwrap() error { return e.Err }
 
+// Uncertain is a Print-Job that failed after it was sent, so that it may or
+// may not have printed. Everything before the Print-Job (the printer's lists,
+// Validate-Job) fails certain: nothing was sent to print. The caller asks the
+// person rather than guessing, since a page that did print is a check that
+// exists.
+type Uncertain struct{ Err error }
+
+func (e Uncertain) Error() string {
+	return fmt.Sprintf("the printer may or may not have printed it: %v", e.Err)
+}
+
+func (e Uncertain) Unwrap() error { return e.Err }
+
 // Refused is the printer saying no.
 type Refused struct {
 	Op          string   // the operation refused: Validate-Job, Print-Job…
@@ -200,6 +213,13 @@ func (c *Client) Print(ctx context.Context, p Printer, job Job, pdf []byte) (int
 
 	resp, _, err := c.do(ctx, p, job0, pdf, true)
 	if err != nil {
+		// A refusal is a certain no. Anything else, once the Print-Job was
+		// on its way, may have reached the printer before it failed: the
+		// answer lost, the connection dropped after the document was sent.
+		if _, refused := errors.AsType[Refused](err); !refused {
+			return 0, Uncertain{Err: err}
+		}
+
 		return 0, err
 	}
 

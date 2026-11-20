@@ -287,31 +287,36 @@ func (l Layout) face(c Check) ([]render.Item, error) {
 	}
 	items = append(items, payee)
 
-	amount, err := l.fit("amount", l.Fields.Amount, c.Amount.Figures())
-	if err != nil {
-		return nil, err
-	}
-	amount.S, err = fill(amount.S, l.Fields.Amount.Width, amount.Size, true)
-	if err != nil {
-		return nil, err
-	}
-	items = append(items, amount)
+	// No amount yet is a form half filled, for the preview: a check printed
+	// always has one (checkbus refuses zero). Drawing "Zero and 00/100" on it
+	// would show a check nobody wrote.
+	if c.Amount != 0 {
+		amount, err := l.fit("amount", l.Fields.Amount, c.Amount.Figures())
+		if err != nil {
+			return nil, err
+		}
+		amount.S, err = fill(amount.S, l.Fields.Amount.Width, amount.Size, true)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, amount)
 
-	words, err := c.Amount.Words()
-	if err != nil {
-		return nil, TooLong{Field: "amount in words", Fits: 0}
-	}
+		words, err := c.Amount.Words()
+		if err != nil {
+			return nil, TooLong{Field: "amount in words", Fits: 0}
+		}
 
-	// The words must fit with room for a space and at least one star.
-	w, err := l.fit("amount in words", l.Fields.Words, words+" *")
-	if err != nil {
-		return nil, err
+		// The words must fit with room for a space and at least one star.
+		w, err := l.fit("amount in words", l.Fields.Words, words+" *")
+		if err != nil {
+			return nil, err
+		}
+		w.S, err = fill(words, l.Fields.Words.Width, w.Size, false)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, w)
 	}
-	w.S, err = fill(words, l.Fields.Words.Width, w.Size, false)
-	if err != nil {
-		return nil, err
-	}
-	items = append(items, w)
 
 	if c.Memo != "" {
 		memo, err := l.fit("memo", l.Fields.Memo, c.Memo)
@@ -349,17 +354,23 @@ func (l Layout) stubs(c Check) ([]render.Item, error) {
 			return nil, err
 		}
 
-		amount, err := l.fit("amount", at(l.Stub.Amount), c.Amount.String())
-		if err != nil {
-			return nil, err
-		}
-
 		payee, err := l.fit("payee", at(l.Stub.Payee), c.Payee)
 		if err != nil {
 			return nil, err
 		}
 
-		items = append(items, label(l.Stub.Date), date, label(l.Stub.Amount), amount, label(l.Stub.Payee), payee)
+		items = append(items, label(l.Stub.Date), date, label(l.Stub.Amount))
+
+		// As on the face: no amount yet is a preview, not a check for $0.00.
+		if c.Amount != 0 {
+			amount, err := l.fit("amount", at(l.Stub.Amount), c.Amount.String())
+			if err != nil {
+				return nil, err
+			}
+			items = append(items, amount)
+		}
+
+		items = append(items, label(l.Stub.Payee), payee)
 
 		if c.Memo != "" {
 			memo, err := l.fit("memo", at(l.Stub.Memo), c.Memo)

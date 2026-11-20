@@ -158,6 +158,27 @@ func TestAPrinterThatSubstitutesIsNotTrusted(t *testing.T) {
 	}
 }
 
+// A Print-Job whose answer is lost may have printed; everything before it
+// certainly didn't.
+func TestAPrintJobThatFailsMidwayIsUncertain(t *testing.T) {
+	s := ipptest.New()
+	defer s.Close()
+
+	s.DropAfter("Print-Job")
+
+	_, err := client().Print(t.Context(), ipp.Printer{URL: s.URL}, job, pdf)
+	if _, ok := errors.AsType[ipp.Uncertain](err); !ok {
+		t.Errorf("err = %v; want Uncertain", err)
+	}
+
+	s.DropAfter("Validate-Job")
+
+	_, err = client().Print(t.Context(), ipp.Printer{URL: s.URL}, job, pdf)
+	if _, ok := errors.AsType[ipp.Uncertain](err); ok || err == nil {
+		t.Errorf("a failure before the Print-Job is %v; want a certain failure", err)
+	}
+}
+
 func TestAJobIsFollowed(t *testing.T) {
 	s := ipptest.New()
 	defer s.Close()

@@ -48,6 +48,7 @@ type Server struct {
 	states     []int
 	jobID      int
 	printer    goipp.Attributes
+	drop       string
 }
 
 // New starts a fake printer over plain IPP.
@@ -73,10 +74,16 @@ func start(tls bool) *Server {
 
 // Refuse makes Validate-Job and Print-Job refuse a job carrying the named
 // option, as a printer with ipp-attribute-fidelity does with one it won't
-// honour: "print-scaling", "media-col".
+// honour: "print-scaling", "media-col". Refuse("") refuses nothing again.
 func (s *Server) Refuse(option string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if option == "" {
+		clear(s.refuse)
+		return
+	}
+
 	s.refuse[option] = true
 }
 
@@ -86,6 +93,14 @@ func (s *Server) Substitute() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.substitute = true
+}
+
+// DropAfter makes the printer receive the operation and then drop the
+// connection without answering: the answer to a request that arrived, lost.
+func (s *Server) DropAfter(op string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.drop = op
 }
 
 // JobStates is what successive Get-Job-Attributes answer, by RFC 8011's enum
@@ -160,6 +175,15 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		Document:   doc,
 		RemoteAddr: r.RemoteAddr,
 	})
+
+	if s.drop == op.String() {
+		if hj, ok := w.(http.Hijacker); ok {
+			if conn, _, err := hj.Hijack(); err == nil {
+				conn.Close()
+				return
+			}
+		}
+	}
 
 	resp := goipp.NewResponse(req.Version, goipp.StatusOk, req.RequestID)
 	resp.Operation.Add(goipp.MakeAttribute("attributes-charset", goipp.TagCharset, goipp.String("utf-8")))

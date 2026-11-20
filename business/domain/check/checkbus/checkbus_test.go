@@ -16,6 +16,7 @@ import (
 	"github.com/jroedel/reconcile-checks/business/domain/check/stores/checkfiles"
 	"github.com/jroedel/reconcile-checks/business/domain/layout/layoutbus"
 	"github.com/jroedel/reconcile-checks/business/types/money"
+	"github.com/jroedel/reconcile-checks/foundation/render"
 	"github.com/jroedel/reconcile-checks/foundation/sqldb"
 )
 
@@ -78,6 +79,7 @@ func setup(t *testing.T) *env {
 		Accounts: accounts{
 			"checking-a": {Key: "checking-a", Last4: "1234", Stock: "walmart-voucher-top"},
 			"checking-b": {Key: "checking-b", Last4: "5678", Stock: "walmart-voucher-top", Ceiling: 500_00},
+			"offset":     {Key: "offset", Last4: "9012", Stock: "walmart-voucher-top", OffsetX: 1.5, OffsetY: -0.5},
 		},
 		Now: func() time.Time { return *e.now },
 	})
@@ -277,6 +279,40 @@ func TestWhatCanNeverPrintIsRefusedAndTakesNoNumber(t *testing.T) {
 				t.Error("a refused check took its number")
 			}
 		})
+	}
+}
+
+// The PDF kept is the one printed: shifted by the printer's offset. The image
+// is not, since it shows the check, not this printer (docs/07).
+func TestThePDFKeptCarriesTheOffset(t *testing.T) {
+	e := setup(t)
+
+	nc := form(1043)
+	nc.Account = "offset"
+
+	c := e.write(t, nc, true)
+	pdf, _ := os.ReadFile(e.file("offset", 1043, "pdf"))
+
+	l, err := layoutbus.Load("walmart-voucher-top")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	paper, err := l.Paper(layoutbus.Check{
+		Number: c.Number, Date: c.WrittenOn, Payee: c.Payee, Amount: c.Amount,
+		Memo: c.Memo, StubNote: c.StubNote, Last4: "9012",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want, err := render.PDF(paper.Shift(1.5, -0.5))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !bytes.Equal(pdf, want) {
+		t.Error("the PDF kept is not the paper shifted by the account's offset")
 	}
 }
 
@@ -629,6 +665,35 @@ func TestANumberIsCorrectedToTheOneOnThePaper(t *testing.T) {
 	e.exec(`UPDATE checks SET sent_at = 1 WHERE number = 1050`)
 	if _, ok := errors.AsType[checkbus.WrongState](e.bus.Renumber(t.Context(), "checking-a", 1050, 1051)); !ok {
 		t.Error("a check already sent was renumbered")
+	}
+}
+
+func TestTheLatestChecksAndTheirImages(t *testing.T) {
+	e := setup(t)
+
+	e.write(t, form(1), true)
+
+	other := form(1)
+	other.Account = "checking-b"
+	other.Amount = 10_00
+	e.write(t, other, true)
+
+	got, err := e.bus.Latest(t.Context(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(got) != 2 || got[0].Account != "checking-b" || got[1].Account != "checking-a" {
+		t.Errorf("latest %+v; want both accounts, the most recent first", got)
+	}
+
+	img, err := e.bus.Image(t.Context(), "checking-a", 1)
+	if err != nil || !bytes.HasPrefix(img, []byte("\x89PNG")) {
+		t.Errorf("the image is %d bytes (%v)", len(img), err)
+	}
+
+	if _, err := e.bus.Image(t.Context(), "checking-a", 2); !errors.Is(err, checkbus.ErrNotFound) {
+		t.Errorf("the image of a check not in the register: %v", err)
 	}
 }
 

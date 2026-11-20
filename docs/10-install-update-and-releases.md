@@ -234,6 +234,11 @@ As in sion-backup, hand-rolled with `make` and `gh`, no GoReleaser:
   with one committed, and the PDF's placed text compared with its
   positions, so that a change which moves a box shows up in the pull
   request, not on a check.
+- **The IPP client against a real IPP implementation** (`make ipp-interop`),
+  on Linux: CUPS's `ippeveprinter`, on loopback and never announced, which
+  spools what it receives. The fake printer in the unit tests decodes with
+  the same library the client encodes with, so it can't catch an encoding
+  another implementation rejects ([05](05-printing.md)).
 
 ## Testing on Windows, and what can't be
 

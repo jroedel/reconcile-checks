@@ -129,6 +129,10 @@ GO_MOD_RELEASE       := go$(shell awk '/^go /{print $$2}' go.mod)
 vuln-check: ## Check dependencies against the Go vulnerability database, under go.mod's Go release (needs network)
 	GOTOOLCHAIN=$(GO_MOD_RELEASE) $(GO) tool govulncheck ./...
 
+.PHONY: ipp-interop
+ipp-interop: ## Run the IPP client against CUPS's ippeveprinter on loopback (needs cups-ipp-utils); never a real printer
+	GO=$(GO) scripts/ipp-interop
+
 .PHONY: test-unit
 test-unit: ## Run unit tests, with the race detector
 	@# -race needs cgo and a C compiler; CGO_ENABLED=0 is for the release

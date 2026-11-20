@@ -51,6 +51,12 @@ jobs:
       - name: unit tests, with the race detector
         run: make test-unit
 
+      - name: the IPP client against a real IPP implementation (ippeveprinter, on loopback)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends cups-ipp-utils
+          make ipp-interop
+
       - name: every target system builds
         run: make cross
 

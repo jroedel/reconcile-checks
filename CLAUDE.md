@@ -114,6 +114,7 @@ make test          # both (the golden tests and JavaScript tests join it as they
 make vuln-check    # govulncheck, under go.mod's Go release. Needs the network.
 make go-check PKG= # the after-editing-Go loop, on one package
 make cross         # builds for every target, so a Windows-only break shows here
+make ipp-interop   # the IPP client against CUPS's ippeveprinter, on loopback. Never a real printer.
 make icons         # redraws the icon and the Windows resource that carries it
 # Arriving later, with what they test:
 make selfupdate-e2e # the self-update cases in Docker, against a fake GitHub (with self-update)

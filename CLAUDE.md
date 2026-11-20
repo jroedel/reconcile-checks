@@ -210,8 +210,13 @@ offsets, never in Go.
   computers. The self-update tests run against a fake GitHub, never the
   real one.
 - **Agents never set GitHub secrets or variables**, and never read
-  `secrets.env` if one ever exists. The release signing key is a person's
-  to make and keep.
+  `secrets.env`. As in the sibling projects, `secrets.env` at the root is
+  where this project's secrets live, kept in the person's password vault;
+  today that is the release signing key's private half. Making it, sending
+  it to GitHub and checking it are `make release-*` targets, a person's
+  ([`docs/10`](docs/10-install-update-and-releases.md), "The release
+  signing key"); agents are denied them. Committing `release-key.pub`, the
+  public half, is an ordinary pull request.
 
 `.claude/settings.json` denies these commands and paths, so the rule holds
 even when it is forgotten. It can deny `lp` and a print job from `ipptool`,

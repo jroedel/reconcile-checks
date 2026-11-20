@@ -1,0 +1,10 @@
+{{define "title"}}Updating · Reconcile Checks{{end}}
+{{define "scripts"}}<script type="module" src="{{asset "updating.mjs"}}"></script>{{end}}
+{{define "content"}}
+{{with .Data}}
+<h1>Updating</h1>
+<p id="update-words" class="notice ok" role="status" data-state="{{.Status.State}}" data-installed="{{.Status.Installed}}">{{if .Words}}{{.Words}}{{else}}This is {{.Status.Version}}.{{end}}</p>
+<noscript><p>Without JavaScript this page doesn't change by itself: <a href="/settings/update">look again</a> in a few seconds. During the restart the program is away for a moment; if the page can't be reached, wait and reload it.</p></noscript>
+<p><a href="/settings">Back to Settings</a></p>
+{{end}}
+{{end}}

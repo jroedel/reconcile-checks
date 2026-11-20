@@ -18,9 +18,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -153,36 +151,6 @@ func updateCommand(args []string, stdout, stderr io.Writer) int {
 	}
 
 	return 0
-}
-
-// checkEvery is how often the check at start asks GitHub: at most once a
-// day (docs/10, "When").
-const checkEvery = 24 * time.Hour
-
-// checkedPath is the file whose time is the last check that reached an
-// answer. In the data folder rather than beside the binary: it is this
-// computer's, not this version's.
-func checkedPath(data string) string { return filepath.Join(data, "update-checked") }
-
-// checkDue reports whether a day has passed since the last check that
-// reached an answer.
-func checkDue(data string, now time.Time) bool {
-	info, err := os.Stat(checkedPath(data))
-
-	return err != nil || now.Sub(info.ModTime()) >= checkEvery
-}
-
-// checked records a check that reached an answer: something installed, or
-// nothing to install. One that failed (offline, GitHub down) is not
-// recorded, so the next start asks again.
-func checked(data string, now time.Time) error {
-	path := checkedPath(data)
-
-	if err := os.WriteFile(path, nil, 0o600); err != nil {
-		return err
-	}
-
-	return os.Chtimes(path, now, now)
 }
 
 // healthy reports whether the copy listening on port answers /healthz with

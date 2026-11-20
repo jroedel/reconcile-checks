@@ -49,7 +49,15 @@ Automatic, because nobody will remember to update two computers.
 
 **When.** At start, at most once a day, in the background: the page is
 usable at once and never waits on GitHub. Also **Update now** in Settings,
-and `reconcile-checks update`. Never while a print is being followed or
+and `reconcile-checks update`.
+
+**Settings → Updates**, as built (`business/domain/update/updatebus`): the
+version; when it last checked; why this copy doesn't update, if it doesn't
+(a development build, no key, a folder it can't write); **Update now**,
+which checks in the background and opens a page that follows the check,
+the install, the wait for printing to finish and the restart, coming back
+to Settings by itself when the new version answers; and the versions this
+computer gave up on, with **Let it install them again**. Never while a print is being followed or
 waiting on *"Did it print correctly?"*.
 
 **How**, in sion-backup's order (`foundation/selfupdate`), which applies as
@@ -152,9 +160,13 @@ Why it matters here more than anywhere:
      `release: minor` or `release: major`;
    - runs the checks again on the merged commit;
    - builds every target, writes `SHA256SUMS`, signs it;
-   - creates a **draft** release for that version at that commit;
-   - runs the release gates against the draft (below);
+   - runs the gates (below);
+   - creates a **draft** release for that version at that commit, and
+     checks that it carries every file built;
    - **publishes** it, which creates the tag.
+
+   Until `release-key.pub` is on `main`, the workflow releases nothing and
+   says so as a warning (`.github/workflows/release.yml`, the `ready` job).
 5. **The computers** find it at their next start (at most a day), or at
    **Update now**, and swap to it when no check is in progress.
 
@@ -199,8 +211,11 @@ As in sion-backup, hand-rolled with `make` and `gh`, no GoReleaser:
   (sion-backup#15, #16, #18) has no place here; its lessons that remain are
   that versions sort by version, not date, and that a release is cut from
   `main` and nothing else.
-- **Draft first, then gates, then publish** (sion-backup#20). The traps found
-  there (sion-backup#23, #24): a draft has no tag yet, so it is found by id
+- **Gates, then a draft, then publish.** sion-backup drafts first and gates
+  the draft (sion-backup#20); here every gate runs on `dist/` before the
+  draft exists, since none of them needs it, and only "every file built is
+  attached" runs on the draft. The traps found there (sion-backup#23, #24)
+  apply as they are: a draft has no tag yet, so it is found by id
   and `tag_name`, not `gh release view vX`; GitHub allows several drafts with
   one tag, so a re-run deletes stale drafts and refuses an already-published
   one; a re-run uses the workflow file from its own commit, so a fix to the
@@ -215,6 +230,24 @@ As in sion-backup, hand-rolled with `make` and `gh`, no GoReleaser:
 - **Gates exit 0 (pass), 1 (the release is wrong: block) or 2 (the gate
   couldn't run: warn and publish)**, and never pass silently when they could
   not look (sion-backup#23, #27).
+- **The gates, as built**:
+  1. The checks again on the merged commit (`make lint`, `make test-unit`).
+  2. `SHA256SUMS.sig` verifies against the committed `release-key.pub`, so
+     the secret is the committed key's pair.
+  3. Every binary carries the release key: the Linux one's `version` ends
+     with `scripts/releasekey fingerprint`, and the Windows one contains
+     `release-key.pub`'s text.
+  4. `make selfupdate-e2e`, every case, with a throwaway key.
+  5. **The previous release updates to this one**: the previous published
+     Linux binary, as downloaded, against a fake GitHub serving this
+     release signed with the real key, by `update` and by itself while
+     running (`scripts/selfupdate-e2e/run --previous --candidate --key`).
+     Skipped with a warning on the first release.
+  6. The draft carries every file in `dist/`.
+- **The version** is worked out by `scripts/releaseversion` from the latest
+  published release and the merged pull request's labels; a commit already
+  released is not released again on a re-run, and any failure to ask GitHub
+  but a 404 stops the release rather than restart at v0.1.0.
 
 ## Checks on every pull request
 
@@ -285,6 +318,10 @@ with no way out to the real GitHub. Cases:
   watches it answer `/healthz`; the new one passes probation and the old
   one leaves. And when the new version never answers, the old one stops
   it, puts itself back, refuses that version and starts again.
+- **Update now**: the running program, its day's check already made, gets
+  the button pressed from its own Settings page (a session from the
+  one-time address it printed, the form token, a same-origin POST), restarts
+  into the new version, and the same session reads Settings afterwards.
 - **Probation**: a version that installs and then fails at every start is
   given up at the fourth, which starts the previous version, and `update`
   won't install it again.
@@ -306,24 +343,42 @@ and then one real check ([04](04-stock-and-layout.md)).
 
 ## The release signing key
 
-Made once, by a person, before the first release: an Ed25519 key pair. The
-public half is committed and compiled into the program; the private half is
-only in the GitHub Actions secret the release job reads, and in an offline
-backup (a password manager). Losing it means a release whose new key the
-old programs can't verify, so they would have to be updated by hand once.
-Agents never make, read or set it ([`CLAUDE.md`](../CLAUDE.md)).
+Made once, by a person, before the first release: an Ed25519 key pair.
+
+- **The private half lives in `secrets.env`** at the repository's root, as
+  `RELEASE_SIGNING_KEY_B64`, the custom of the sibling projects: the file is
+  gitignored, kept in the password vault, and a lost checkout plus that one
+  file is a working setup again. `secrets.env.example`, tracked, documents
+  it. From there it goes to one place, the GitHub Actions secret
+  `RELEASE_SIGNING_KEY`, which only the release job reads.
+- **The public half is `release-key.pub`**, committed, the base64 of its 32
+  bytes. The Makefile builds it into every release (`RELEASE_KEY`), and
+  `reconcile-checks version` shows its fingerprint.
+
+In order, by the person, at a terminal (`scripts/releasekey`):
+
+1. `make release-keygen`: makes the pair, writes `secrets.env` (from the
+   example, if there is none) and `release-key.pub`. It refuses if
+   `secrets.env` already holds a key.
+2. Save `secrets.env` in the vault. Commit `release-key.pub` by pull request.
+3. `make release-send-secret`: checks the two halves are one pair, then
+   `gh secret set RELEASE_SIGNING_KEY`.
+4. `make release-status`: the pair, `release-key.pub` on `main`, and the
+   secret set.
+
+Losing the private half means a release whose new key the installed copies
+can't verify, so each computer would have to be updated by hand once.
+Agents never make, read or set it: `.claude/settings.json` denies them
+`secrets.env` and these targets ([`CLAUDE.md`](../CLAUDE.md)).
 
 ## The signature, as built
 
 `SHA256SUMS.sig` is one line: the standard base64, with padding, of the raw
 64-byte Ed25519 signature over the exact bytes of `SHA256SUMS`. The release
-job can make it with OpenSSL alone:
-
-```sh
-openssl pkeyutl -sign -rawin -inkey key.pem -in SHA256SUMS | base64 -w0 > SHA256SUMS.sig
-```
-
-(tried with a throwaway key, and accepted by Go's `ed25519.Verify`). The
+job makes it with `scripts/releasekey sign`, from the secret, and checks it
+with `scripts/releasekey verify` against the committed `release-key.pub`
+before publishing, so a secret that isn't the committed key's pair stops
+the release rather than shipping one no computer will install. The
 updater checks it before reading any hash out of the file, and an updater
 with no key refuses to update at all (`foundation/selfupdate`).
 

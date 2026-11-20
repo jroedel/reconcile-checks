@@ -3,6 +3,7 @@
 <h1>Settings</h1>
 {{with .Data}}
 {{if .Error}}<p class="notice" role="alert">{{.Error}}</p>{{end}}
+{{if .Updated}}<p class="notice ok" role="status">Updated: this is {{$.Version}} now.</p>{{end}}
 {{if eq .Saved "printer"}}<p class="notice ok" role="status">The printer was removed.</p>{{end}}
 
 <h2>Accounts</h2>
@@ -24,6 +25,28 @@
 <p>No printers yet.</p>
 {{end}}
 <p><a class="button quiet" href="/settings/printers/find">Add a printer</a></p>
+
+{{with .Updates}}
+<h2>Updates</h2>
+{{if eq $.Data.Saved "forgot"}}<p class="notice ok" role="status">This computer will install those versions again.</p>{{end}}
+<p>This is {{.Status.Version}}.{{if .Checked}} It last checked for a newer version {{.Checked}}.{{else if not .Status.CantUpdate}} It checks for a newer version each day it is opened.{{end}}</p>
+{{if .Words}}<p class="{{if .Status.CantUpdate}}notice{{else}}hint{{end}}">{{.Words}}</p>{{end}}
+{{if not .Status.CantUpdate}}
+{{if eq .Status.State "idle"}}
+<form method="post" action="/settings/update" class="inline">
+<input type="hidden" name="form_token" value="{{$.FormToken}}">
+<button type="submit" class="quiet">Update now</button>
+</form>
+{{else}}<p><a href="/settings/update">How is it going?</a></p>{{end}}
+{{end}}
+{{if .Status.Refused}}
+<p>This computer gave up on {{join .Status.Refused}}, because {{if eq (len .Status.Refused) 1}}it{{else}}they{{end}} didn't start, and won't install {{if eq (len .Status.Refused) 1}}it{{else}}them{{end}} again.</p>
+<form method="post" action="/settings/update/forget" class="inline">
+<input type="hidden" name="form_token" value="{{$.FormToken}}">
+<button type="submit" class="quiet">Let it install {{if eq (len .Status.Refused) 1}}it{{else}}them{{end}} again</button>
+</form>
+{{end}}
+{{end}}
 
 <h2>About</h2>
 <dl class="facts">

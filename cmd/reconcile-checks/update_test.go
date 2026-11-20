@@ -4,10 +4,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"slices"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 )
@@ -32,36 +30,13 @@ func TestTheKeyIsOneWordInVersion(t *testing.T) {
 	releaseKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 	got := keyWord()
 
-	if !strings.HasPrefix(got, "key:") || len(got) != len("key:")+16 || strings.ContainsAny(got, " \t\n") {
+	// The same word scripts/releasekey's fingerprint gives for this key: the
+	// release job compares the two.
+	if got != "key:66687aadf862bd77" {
 		t.Errorf("a key: %q", got)
 	}
 
 	if _, err := updateKey(); err != nil {
-		t.Error(err)
-	}
-}
-
-func TestTheCheckIsOnceADay(t *testing.T) {
-	data := t.TempDir()
-	now := time.Now()
-
-	if !checkDue(data, now) {
-		t.Error("never checked, and not due")
-	}
-
-	if err := checked(data, now); err != nil {
-		t.Fatal(err)
-	}
-
-	if checkDue(data, now.Add(23*time.Hour)) {
-		t.Error("due again within the day")
-	}
-
-	if !checkDue(data, now.Add(checkEvery)) {
-		t.Error("not due a day later")
-	}
-
-	if _, err := os.Stat(checkedPath(data)); err != nil {
 		t.Error(err)
 	}
 }

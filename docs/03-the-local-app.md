@@ -136,6 +136,8 @@ void and not yet sent. Void a check from here; send what is waiting.
 - the accounts this computer prints checks on, from those Reconcile offers,
   each with its stock and its printer;
 - signing in and out of Reconcile ([08](08-signing-in.md));
+- updates: the version, the last check, **Update now**, and any version
+  this computer gave up on ([10](10-install-update-and-releases.md));
 - the version, and updates ([10](10-install-update-and-releases.md)).
 
 ## The front end

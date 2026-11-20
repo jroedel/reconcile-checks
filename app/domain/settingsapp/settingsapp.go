@@ -17,6 +17,7 @@ package settingsapp
 import (
 	"context"
 	"embed"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
@@ -30,6 +31,7 @@ import (
 	"github.com/jroedel/reconcile-checks/business/domain/layout/layoutbus"
 	"github.com/jroedel/reconcile-checks/business/domain/print/printbus"
 	"github.com/jroedel/reconcile-checks/business/domain/settings/settingsbus"
+	"github.com/jroedel/reconcile-checks/business/domain/update/updatebus"
 	"github.com/jroedel/reconcile-checks/business/types/money"
 	"github.com/jroedel/reconcile-checks/foundation/ipp"
 	"github.com/jroedel/reconcile-checks/foundation/mdns"
@@ -54,6 +56,11 @@ type Config struct {
 	// things?" can answer.
 	ConfigFile string
 	DataDir    string
+
+	// Updates is updating itself; nil hides the section (tests). Context is
+	// the program's own: a check started from the page outlives the request.
+	Updates *updatebus.Business
+	Context context.Context
 }
 
 // App holds the handlers.
@@ -68,6 +75,7 @@ func New(cfg Config) (*App, error) {
 		"account":     "templates/account.html",
 		"calibrating": "templates/calibrating.html",
 		"job":         "templates/job.html",
+		"updating":    "templates/updating.html",
 	} {
 		if err := cfg.Render.Add(name, templates, file); err != nil {
 			return nil, err
@@ -90,6 +98,8 @@ type settingsView struct {
 	Config   string
 	Data     string
 	Saved    string
+	Updated  bool // back from restarting into an update: this version
+	Updates  *updatesView
 }
 
 // Settings is the overview: about, the printers, the accounts.
@@ -98,7 +108,125 @@ func (a *App) Settings(w http.ResponseWriter, r *http.Request) {
 
 	a.cfg.Render.Render(w, r, http.StatusOK, "settings", settingsView{
 		Settings: s, Error: sentence(err), Config: a.cfg.ConfigFile, Data: a.cfg.DataDir, Saved: r.URL.Query().Get("saved"),
+		Updates: a.updates(),
+		Updated: a.cfg.Updates != nil && r.URL.Query().Get("updated") == a.cfg.Updates.Status().Version,
 	})
+}
+
+// --- updates ------------------------------------------------------------------
+
+// updatesView is updating itself, as Settings shows it.
+type updatesView struct {
+	Status  updatebus.Status
+	Words   string // where it stands, in a sentence
+	Checked string // "today at 9:14", "" for never
+}
+
+func (a *App) updates() *updatesView {
+	if a.cfg.Updates == nil {
+		return nil
+	}
+
+	st := a.cfg.Updates.Status()
+
+	return &updatesView{Status: st, Words: updateWords(st), Checked: when(st.Checked, time.Now())}
+}
+
+// updateWords is where updating stands, as the page and its script say it.
+func updateWords(st updatebus.Status) string {
+	switch {
+	case st.CantUpdate != "":
+		return st.CantUpdate
+	case st.State == updatebus.Checking:
+		return "Looking for a newer version, and checking any it finds before installing it."
+	case st.State == updatebus.Waiting:
+		return "Installed " + st.Installed + ". The program restarts into it once no check is printing."
+	case st.State == updatebus.Restarting:
+		return "Restarting into " + st.Installed + ". This page comes back by itself."
+	case st.Problem != "":
+		return "The check didn't finish: " + st.Problem + " The next start tries again."
+	case st.Latest:
+		return st.Version + " is the latest version."
+	}
+
+	return ""
+}
+
+// when is a time as the page says it: "today at 9:14", "yesterday at
+// 16:02", or the date.
+func when(t, now time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+
+	day := func(t time.Time) string { return t.Format(time.DateOnly) }
+
+	switch day(t) {
+	case day(now):
+		return "today at " + t.Format("15:04")
+	case day(now.AddDate(0, 0, -1)):
+		return "yesterday at " + t.Format("15:04")
+	}
+
+	return t.Format("January 2, 2006")
+}
+
+// UpdateNow starts a check for a newer version, and shows it under way.
+func (a *App) UpdateNow(w http.ResponseWriter, r *http.Request) {
+	if a.cfg.Updates == nil {
+		a.notFound(w, r)
+		return
+	}
+
+	if err := a.cfg.Updates.CheckNow(a.cfg.Context); err != nil {
+		a.fail(w, r, settingsbus.Invalid{Field: "update", Sentence: sentence(err)})
+		return
+	}
+
+	http.Redirect(w, r, "/settings/update", http.StatusSeeOther)
+}
+
+// Updating is the page that follows a check, and the restart after it.
+func (a *App) Updating(w http.ResponseWriter, r *http.Request) {
+	v := a.updates()
+	if v == nil {
+		a.notFound(w, r)
+		return
+	}
+
+	a.cfg.Render.Render(w, r, http.StatusOK, "updating", v)
+}
+
+// UpdateStatus is where updating stands, for the updating page's script.
+func (a *App) UpdateStatus(w http.ResponseWriter, r *http.Request) {
+	v := a.updates()
+	if v == nil {
+		a.notFound(w, r)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	json.NewEncoder(w).Encode(struct {
+		State     updatebus.State `json:"state"`
+		Version   string          `json:"version"`
+		Installed string          `json:"installed"`
+		Words     string          `json:"words"`
+	}{v.Status.State, v.Status.Version, v.Status.Installed, v.Words})
+}
+
+// ForgetRefused lets this computer install again the versions it gave up on.
+func (a *App) ForgetRefused(w http.ResponseWriter, r *http.Request) {
+	if a.cfg.Updates == nil {
+		a.notFound(w, r)
+		return
+	}
+
+	if err := a.cfg.Updates.Forget(); err != nil {
+		a.fail(w, r, err)
+		return
+	}
+
+	http.Redirect(w, r, "/settings?saved=forgot", http.StatusSeeOther)
 }
 
 // --- printers -----------------------------------------------------------------
@@ -471,6 +599,7 @@ func (a *App) notFound(w http.ResponseWriter, r *http.Request) {
 
 	a.cfg.Render.Render(w, r, http.StatusNotFound, "settings", settingsView{
 		Settings: s, Error: "There is no such printer or account in Settings.", Config: a.cfg.ConfigFile, Data: a.cfg.DataDir,
+		Updates: a.updates(),
 	})
 }
 
@@ -484,6 +613,7 @@ func (a *App) fail(w http.ResponseWriter, r *http.Request, err error) {
 
 	a.cfg.Render.Render(w, r, status, "settings", settingsView{
 		Settings: s, Error: sentence(err), Config: a.cfg.ConfigFile, Data: a.cfg.DataDir,
+		Updates: a.updates(),
 	})
 }
 

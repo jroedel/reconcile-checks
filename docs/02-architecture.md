@@ -138,7 +138,7 @@ stock   = "walmart-voucher-top"   # which layout
 printer = "Office M612"
 tray    = "tray-1"                # the printer's media-source for the checks
 media_type = "stationery-preprinted"
-feed    = "face up, top edge in first"   # settled with a marked sheet (05)
+feed    = "face up, stubs in first"   # settled with a marked sheet (05)
 offset_mm = { x = 0.0, y = 0.0 }         # from calibration (04)
 ```
 

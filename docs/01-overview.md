@@ -55,7 +55,7 @@ Double-click Reconcile Checks. The browser opens at **Write a check**:
 │ Memo       Kitchen drain repair       │                                          │
 │ Stub note  Invoice 8812               │                                          │
 │                                       │                                          │
-│ [ Print check 1043 to Payee A for $1,234.50 ]   Tray 1 · face down, top first    │
+│ [ Print check 1043 to Payee A for $1,234.50 ]   Tray 1 · face up, stubs first    │
 └───────────────────────────────────────┴──────────────────────────────────────────┘
 ```
 

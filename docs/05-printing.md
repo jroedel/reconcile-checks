@@ -129,11 +129,17 @@ them in the clear when the printer can encrypt.
 
 Settled once per printer and tray with a plain sheet marked "top, this side
 up", and written down twice: in the account's `feed`, which the page shows
-beside the Print button ("Tray 1: face down, top edge in first"), and here.
+beside the Print button ("Tray 1: face up, stubs in first"), and here.
 
 | Printer | Tray | Feed |
 |---|---|---|
-| HP LaserJet M612 | `tray-1`, multipurpose | (to be measured) |
+| HP LaserJet M612 | `tray-1`, multipurpose | **Face up, the stubs' edge in first.** The side facing up is the side printed, and the edge fed in first becomes the bottom of the page, so the check's end goes in last. |
+
+The M612's answer was found on 2026-11-20 with tray 1's paper type set to
+Preprinted on the panel and the job asking for `stationery-preprinted`, as
+every check does. A printer's handling of letterhead and preprinted paper is
+a setting on its panel on some printers; if anything about tray 1 is
+changed there, mark a plain sheet and test again before the next check.
 
 ## Did it print?
 
@@ -155,15 +161,21 @@ received ([10](10-install-update-and-releases.md)), never against a printer.
 Real check stock is not cheap and a misprint can't be undone, so **only a
 person prints to a real printer**. See [`CLAUDE.md`](../CLAUDE.md).
 
+## The M612 and `print-scaling=none`
+
+It lists `none` in `print-scaling-supported`, but leaves `print-scaling` out
+of `job-creation-attributes-supported`, and its default, `auto`, would shrink
+a full Letter page into its 4.23 mm margins and move every box. So whether it
+would honour `none` was an open question until a person printed the first
+calibration page on plain paper, on 2026-11-20: **it accepted the job with
+`print-scaling=none` and fidelity, and printed the page at full size.** The
+ruler's millimetres matched the check's own spacing across the page, and the
+boxes lay on the check's rules to within about half a millimetre.
+
+The program still sends `none` with fidelity on every job, so a firmware
+update that changes this shows as a refusal naming `print-scaling`, never as
+a scaled check.
+
 ## Open questions
 
-- **Will the M612 honour `print-scaling=none`?** It lists `none` in
-  `print-scaling-supported`, but leaves `print-scaling` out of
-  `job-creation-attributes-supported`. Its default, `auto`, would shrink a
-  full Letter page into its 4.23 mm margins and move every box. The program
-  sends `none` with fidelity, so the worst case is a refusal naming
-  `print-scaling`, never a scaled check. The first calibration page, printed
-  by a person on plain paper, answers it. If the M612 refuses, the choices
-  are to leave `print-scaling` out for that printer and measure whether the
-  calibration page comes out at full size, or to find the setting on the
-  printer's panel.
+None yet.

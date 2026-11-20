@@ -11,9 +11,11 @@
 # Measured on 2026-11-20 from a 300 dpi scan of a blank page, straightened by
 # 0.24 degrees, with the first perforation taken as 88.9 mm (3.5 in) from the
 # top of the sheet and the scan's left edge as the sheet's.
-# PROVISIONAL until both are confirmed with a ruler on the paper
-# (docs/04, "Open questions"), and until a calibration page has been held
-# against a real check. The offsets in a computer's own settings correct its
+# A calibration page printed from it on the M612, on plain paper, and held
+# against a blank check on 2026-11-20, lay on the check's rules to within
+# about half a millimetre, at full size (docs/05).
+# PROVISIONAL until the perforation and the left edge are confirmed with a
+# ruler on the paper (docs/04, "Open questions"). The offsets in a computer's own settings correct its
 # printer; this file describes the paper and is corrected only when the
 # paper was measured wrong.
 

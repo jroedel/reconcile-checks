@@ -43,7 +43,7 @@ type Account struct {
 	Printer   string // a Printer's Name
 	Tray      string // the printer's media-source for the checks: tray-1
 	MediaType string // the printer's media-type for the stock: stationery-preprinted
-	Feed      string // which way up, written once: "face down, top edge in first"
+	Feed      string // which way up, written once: "face up, stubs in first"
 
 	Ceiling money.Cents // above it, an amount is asked about again
 	Offset  Offset

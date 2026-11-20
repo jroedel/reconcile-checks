@@ -45,7 +45,7 @@
 # printer    = "Office M612"             # a [[printer]]'s name
 # tray       = "tray-1"                  # the printer's tray for the checks
 # media_type = "stationery-preprinted"   # the printer's name for the stock
-# feed       = "face down, top edge in first"   # which way up, settled once
+# feed       = "face up, stubs in first"   # which way up, settled once with a marked sheet
 # ceiling    = "10,000.00"               # above it, an amount is asked about again
 # reconcile_id = "…"                     # Reconcile's id, once signed in
 # [account.offset_mm]                    # from the calibration page: + is right and down

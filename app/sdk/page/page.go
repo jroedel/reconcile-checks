@@ -80,6 +80,11 @@ func New(log *slog.Logger, sessions *mid.Sessions, version string) (*Renderer, e
 			return err
 		}
 
+		// A script's tests live beside it and are never served.
+		if strings.HasSuffix(p, "_test.mjs") {
+			return nil
+		}
+
 		body, err := assetsFS.ReadFile(p)
 		if err != nil {
 			return err
@@ -114,7 +119,9 @@ func (r *Renderer) Add(name string, fsys fs.FS, file string) error {
 		return fmt.Errorf("page: two pages are both called %q", name)
 	}
 
-	t, err := template.New(name).Funcs(funcs).ParseFS(baseFS, "templates/base.html")
+	// asset is a page's way to name an embedded file of its own, a script
+	// usually, at its hashed address.
+	t, err := template.New(name).Funcs(funcs).Funcs(template.FuncMap{"asset": r.URL}).ParseFS(baseFS, "templates/base.html")
 	if err != nil {
 		return fmt.Errorf("page: parsing the base: %w", err)
 	}

@@ -137,6 +137,10 @@ func New(cfg Config) (http.Handler, error) {
 	app.HandleFunc("GET /checks/{account}/{number}/printing", write.Printing)
 	app.HandleFunc("POST /checks/{account}/{number}/printed", write.Printed)
 	app.HandleFunc("POST /checks/{account}/{number}/reprint", write.Reprint)
+	app.HandleFunc("GET /checks/{account}/{number}/job", write.Job)
+	app.HandleFunc("GET /write/amount", write.Amount)
+	app.HandleFunc("GET /write/defaults", write.Defaults)
+	app.HandleFunc("GET /write/proposal", write.Proposal)
 
 	app.HandleFunc("GET /checks", checks.List)
 	app.HandleFunc("GET /checks/{account}/{number}", checks.Check)

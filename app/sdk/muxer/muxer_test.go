@@ -580,3 +580,46 @@ func TestWritingAndPrintingAChecksThroughThePages(t *testing.T) {
 		t.Errorf("the form doesn't ask about the unanswered check:\n%s", page)
 	}
 }
+
+// What the page's script asks as the form is typed: the server's own answers,
+// from the code that prints.
+func TestWhatTheScriptAsks(t *testing.T) {
+	f := setup(t)
+	f.account(t)
+
+	if body := f.get(t, "/write/amount?amount=1234.5"); !strings.Contains(body, `"figures":"$1,234.50"`) ||
+		!strings.Contains(body, `"words":"One thousand two hundred thirty-four and 50/100"`) {
+		t.Errorf("the amount: %s", body)
+	}
+
+	if body := f.get(t, "/write/amount?amount=12.345"); !strings.Contains(body, `"error":"`) || strings.Contains(body, `"error":""`) {
+		t.Errorf("an amount that isn't one: %s", body)
+	}
+
+	if body := f.get(t, "/write/proposal?account=checking-a"); body != "{\"next\":0,\"last\":[]}\n" {
+		t.Errorf("the proposal on an empty register: %s", body)
+	}
+
+	yes := check("1043")
+	yes["answered"] = []string{"new-payee=payee a plumbing"}
+	if w := f.post(t, "/checks", yes); w.Code != http.StatusSeeOther {
+		t.Fatalf("printing: %d\n%s", w.Code, w.Body)
+	}
+
+	if body := f.get(t, "/write/proposal?account=checking-a"); body != "{\"next\":1044,\"last\":[1043]}\n" {
+		t.Errorf("the proposal after 1043: %s", body)
+	}
+
+	if body := f.get(t, "/write/defaults?payee=payee+a+plumbing"); !strings.Contains(body, `"found":true`) ||
+		!strings.Contains(body, `"amount":"1,234.50"`) || !strings.Contains(body, `"memo":"Kitchen drain repair"`) {
+		t.Errorf("the payee's last check: %s", body)
+	}
+
+	if body := f.get(t, "/checks/checking-a/1043/job?printer=Office&job=1"); !strings.Contains(body, `"done":true`) || !strings.Contains(body, `"state":"completed"`) {
+		t.Errorf("the job: %s", body)
+	}
+
+	if w := f.do(req{method: "GET", path: "/write/amount?amount=1"}); w.Code != http.StatusUnauthorized {
+		t.Errorf("the amount without the session: %d", w.Code)
+	}
+}

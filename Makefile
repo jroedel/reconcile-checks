@@ -131,6 +131,14 @@ GO_MOD_RELEASE       := go$(shell awk '/^go /{print $$2}' go.mod)
 vuln-check: ## Check dependencies against the Go vulnerability database, under go.mod's Go release (needs network)
 	GOTOOLCHAIN=$(GO_MOD_RELEASE) $(GO) tool govulncheck ./...
 
+.PHONY: test-js
+test-js: ## The JavaScript's unit tests, under Node's own test runner. No browser
+	@scripts/js-test unit
+
+.PHONY: test-browser
+test-browser: ## The pages with scripts, in headless Chrome against the program on a test config
+	@scripts/js-test browser
+
 .PHONY: ipp-interop
 ipp-interop: ## Run the IPP client against CUPS's ippeveprinter on loopback (needs cups-ipp-utils); never a real printer
 	GO=$(GO) scripts/ipp-interop
@@ -146,7 +154,7 @@ test-unit: ## Run unit tests, with the race detector
 	@GO=$(GO) scripts/go-test -race ./...
 
 .PHONY: test
-test: test-unit lint ## Full local check: unit tests + lint (the golden tests are among the unit tests)
+test: test-unit lint test-js ## Full local check: unit tests + lint + the JavaScript's (the golden tests are among the unit tests; test-browser needs Chrome and is separate)
 
 .PHONY: golden
 golden: ## Rewrite the golden files of the check's layout, on purpose (say in the PR what moved)

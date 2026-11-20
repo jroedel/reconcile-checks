@@ -13,7 +13,7 @@
 <link rel="icon" type="image/svg+xml" href="{{.IconSVG}}">
 <link rel="icon" type="image/png" sizes="32x32" href="{{.Icon32}}">
 {{if .Session}}<script type="module" src="{{.Script}}"></script>
-{{end}}{{block "head" .}}{{end}}</head>
+{{block "scripts" .}}{{end}}{{end}}{{block "head" .}}{{end}}</head>
 <body>
 <p class="notice closed" id="closed" role="status" hidden>Reconcile Checks has closed. Open it again from its shortcut.</p>
 <header class="masthead">

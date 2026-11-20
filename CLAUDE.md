@@ -115,11 +115,11 @@ make vuln-check    # govulncheck, under go.mod's Go release. Needs the network.
 make go-check PKG= # the after-editing-Go loop, on one package
 make cross         # builds for every target, so a Windows-only break shows here
 make ipp-interop   # the IPP client against CUPS's ippeveprinter, on loopback. Never a real printer.
+make test-js       # the pages' JavaScript, under Node's own test runner
+make test-browser  # the pages in headless Chrome, against the program on a test config whose printer is a folder
 make icons         # redraws the icon and the Windows resource that carries it
 # Arriving later, with what they test:
 make selfupdate-e2e # the self-update cases in Docker, against a fake GitHub (with self-update)
-make test-js       # the JavaScript, under Node's own test runner (with the Write a check page)
-make test-browser  # the pages in headless Chrome, against a server on a test config (with the Write a check page)
 ```
 
 `make test-unit` counts the passing packages instead of listing them, so **there

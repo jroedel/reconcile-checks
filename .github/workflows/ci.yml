@@ -86,4 +86,6 @@ jobs:
       - name: the GUI build, as released, starts and answers version
         run: |
           go build -ldflags='-s -w -X main.version=v0.0.0-ci -H windowsgui' -o rc.exe ./cmd/reconcile-checks
-          ./rc.exe version
+          out=$(./rc.exe version)
+          echo "$out"
+          [[ "$out" == "reconcile-checks v0.0.0-ci windows/amd64 "* ]] || { echo "the GUI build did not print its version"; exit 1; }

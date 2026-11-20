@@ -16,8 +16,17 @@ import (
 // console of its own: `reconcile-checks version` typed in a terminal would
 // print nothing. Attaching to the parent's console, when there is one, gives
 // that back; from the Start menu there is none, and this does nothing.
+//
+// Only when the program has no output of its own: a GUI program still inherits
+// a pipe or a file it was given (`reconcile-checks version > out.txt`, or CI
+// reading its output), and attaching to a console then would send the text
+// there instead of where it was asked to go.
 func attachConsole() {
 	const attachParentProcess = ^uintptr(0) // (DWORD)-1
+
+	if out, err := windows.GetStdHandle(windows.STD_OUTPUT_HANDLE); err == nil && out != 0 && out != windows.InvalidHandle {
+		return
+	}
 
 	attach := windows.NewLazySystemDLL("kernel32.dll").NewProc("AttachConsole")
 	if ok, _, _ := attach.Call(attachParentProcess); ok == 0 {

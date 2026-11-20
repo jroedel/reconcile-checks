@@ -212,3 +212,55 @@ func TestTheRegisterSeesTheAccount(t *testing.T) {
 		t.Errorf("an unknown account: %v", err)
 	}
 }
+
+func TestAnAccountWithNoFeedIsGivenTheM612s(t *testing.T) {
+	b, _ := setup(t, "")
+
+	if err := b.SavePrinter("", printer); err != nil {
+		t.Fatal(err)
+	}
+
+	a := account()
+	a.Feed = ""
+
+	if err := b.SaveAccount(a, true); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := b.Account(a.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Spelled out as well as named: the default is the M612's answer
+	// (docs/05), and changing it should mean changing this line too.
+	if got.Feed != "face up, stubs in first" {
+		t.Errorf("feed %q, want the M612's, face up, stubs in first", got.Feed)
+	}
+}
+
+func TestAnAccountKeptWithNoFeedShowsTheDefault(t *testing.T) {
+	b, _ := setup(t, `
+[[printer]]
+name = "Office M612"
+url = "ipps://printer.local/ipp/print"
+
+[[account]]
+key = "checking-a"
+name = "Checking A"
+last4 = "1234"
+stock = "walmart-voucher-top"
+printer = "Office M612"
+tray = "tray-1"
+media_type = "stationery-preprinted"
+`)
+
+	s, err := b.Settings()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(s.Accounts) != 1 || s.Accounts[0].Feed != settingsbus.DefaultFeed {
+		t.Errorf("accounts %+v", s.Accounts)
+	}
+}

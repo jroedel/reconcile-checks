@@ -51,7 +51,8 @@ payee's record of what it paid for (the remittance advice), and the second
 stays with the payer as the file copy. Common practice prints the same on
 both:
 
-- check number, date, payee, amount;
+- date, payee, amount (the check number is already printed on each stub,
+  in its header);
 - the memo;
 - the **stub note**, optional: the detail the memo line is too short for,
   which is what the payee's stub is for. For a regular payee, the period
@@ -64,8 +65,8 @@ can disagree with the first. The payer's copy matters less than usual,
 because Reconcile holds the image, and stays mainly as the paper to write
 "VOID" on and file.
 
-**Never:** the check number on the face (it is pre-printed), any account or
-routing number, a signature.
+**Never:** the check number, on the face or the stubs (it is pre-printed on
+all three), any account or routing number, a signature.
 
 The checks are **signed by hand**, one signature at any amount (decided
 2026-11-20); nothing is printed on the signature line.
@@ -73,6 +74,43 @@ The checks are **signed by hand**, one signature at any amount (decided
 A payee or memo too long for its line at the layout's smallest allowed size
 is refused in the form, with how many characters fit, rather than shrunk
 until it can't be read or run into the next box.
+
+## Measuring the stock
+
+**The base of measurement is a scan of a blank page of the stock**
+(2026-11-20): 300 dpi, flatbed, kept on the development machine and never
+committed (below, "This repository is public"). Every position in the
+layout is measured from it, in millimetres, and then proved on paper.
+
+What the scan shows, and what it settles:
+
+- **The check is the top 3.5 in** of the letter page, inside a printed
+  frame: the date line at the top right, the payee line ending in the `$`
+  box, the dollars line ending in "DOLLARS", the memo line, the signature
+  line, and the MICR line in the band at the foot.
+- **Two stubs below**, each 3.5 in, separated by perforations. Each stub
+  carries a pre-printed header: the account holder's name at the left and
+  the check number at the right. What the program prints on a stub starts
+  below that header.
+- **The scale is right.** The two perforations are 88.7 mm apart on the
+  scan, against 3.5 in (88.9 mm) on the stock as designed: within 0.2 mm, so
+  no correction is applied for the scanner.
+
+How positions are taken:
+
+- **From the stock's own marks, not the scan's edges.** The scanned area is
+  8.48 × 10.99 in, a little less than the sheet, so its edges are not the
+  paper's. The datum is the first perforation (the foot of the check), 3.5 in
+  from the top of the sheet, and the left edge of the check's printed frame.
+  A ruler confirms each of those once against the paper itself.
+- **Each field gets a box**: where its text starts, how wide it may run,
+  and the baseline it sits on, a little above the printed line, never on
+  it.
+- The measurements go into the stock's layout file. The calibration page,
+  printed on plain paper and held to the light against a check, is the
+  proof (below); a scan of the calibration page, on the same scanner, can
+  check the printer's own scale the same way the perforations checked the
+  scanner's.
 
 ## Amount in words
 
@@ -116,13 +154,20 @@ and in [05](05-printing.md).
 ## This repository is public
 
 No image of the real stock is ever committed: a scan or photograph of a check
-shows its full account and routing numbers on the MICR line. The layout
+shows its full account and routing numbers on the MICR line, and the
+account holder's name and address. A scan lives in the repository's folder
+only under a name `.gitignore` already covers (a `.pdf` or an image), or in
+`stock-scans/`, which is ignored whole. The layout
 describes the stock in millimetres, measured from the paper; positions, not
 pictures.
 
 ## Open questions
 
-1. **The stock, in hand**: the product name, the positions of the boxes in
-   millimetres, and that the check number and MICR line are pre-printed
-   (assumed). One stock for all accounts? Nothing in the layout can be
-   finished before this.
+1. **The positions**, measured from the scan into the layout (above). The
+   check number and MICR line are confirmed pre-printed, on the face and on
+   both stubs.
+2. **A ruler on the paper**, once: the first perforation's distance from the
+   top of the sheet (3.5 in assumed), and the left edge of the check's
+   frame from the left edge of the sheet.
+3. **One stock for all accounts**, or a different product for another
+   account?

@@ -30,15 +30,23 @@ key
 
 # A check printed or rendered from real data, and scans of real stock, whose
 # MICR line carries the full account and routing numbers. Golden test images
-# of invented checks are tracked under testdata/ on purpose.
+# and PDFs of invented checks are tracked under testdata/ on purpose; a scan
+# never goes there.
+/stock-scans/
 *.pdf
 *.png
 *.jpg
 *.jpeg
+*.tif
+*.tiff
+*.bmp
+*.webp
+*.heic
 !**/testdata/**/*.png
+!**/testdata/**/*.pdf
 exports/
 
-# Local tooling (the pinned Typst lands in ./tools) and editor state
+# Local tooling (pinned dev tools land in ./tools) and editor state
 /tools/
 .idea/
 .vscode/

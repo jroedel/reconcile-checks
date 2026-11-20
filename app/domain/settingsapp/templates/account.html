@@ -1,0 +1,93 @@
+{{define "title"}}{{if .Data.New}}Add an account{{else}}{{.Data.Account.Name}}{{end}} · Reconcile Checks{{end}}
+{{define "content"}}
+{{with .Data}}
+<h1>{{if .New}}Add an account{{else}}{{.Account.Name}}{{end}}</h1>
+{{if .Error}}<p class="notice" role="alert">{{.Error}}</p>{{end}}
+
+<form method="post" action="/settings/accounts{{if not .New}}/{{.Account.Key}}{{end}}">
+<input type="hidden" name="form_token" value="{{$.FormToken}}">
+
+{{if .New}}
+<div class="field">
+<label for="key">Short name</label>
+<input type="text" id="key" name="key" value="{{.Account.Key}}" required pattern="[a-z0-9][a-z0-9\-]*" placeholder="checking-a"{{if eq .Field "key"}} aria-invalid="true" autofocus{{end}}>
+<p class="hint">Small letters, digits and hyphens. It names this account's folder of checks, and can't be changed later.</p>
+</div>
+{{end}}
+
+<div class="field">
+<label for="name">Name</label>
+<input type="text" id="name" name="name" value="{{.Account.Name}}" required placeholder="Checking A"{{if eq .Field "name"}} aria-invalid="true" autofocus{{end}}>
+</div>
+
+<div class="field">
+<label for="last4">Last four digits of the account number</label>
+<input type="text" id="last4" name="last4" value="{{.Account.Last4}}" required inputmode="numeric" pattern="[0-9]{4}" maxlength="4"{{if eq .Field "last4"}} aria-invalid="true" autofocus{{end}}>
+<p class="hint">Shown on the image as XXXXXX1234. This program never needs more of the number.</p>
+</div>
+
+<div class="field">
+<label for="stock">Check stock</label>
+<select id="stock" name="stock">
+{{range .Stocks}}<option value="{{.}}"{{if eq . $.Data.Account.Stock}} selected{{end}}>{{.}}</option>{{end}}
+</select>
+</div>
+
+<div class="field">
+<label for="printer">Printer</label>
+<select id="printer" name="printer"{{if eq .Field "printer"}} aria-invalid="true"{{end}}>
+{{range .Printers}}<option value="{{.Name}}"{{if eq .Name $.Data.Account.Printer}} selected{{end}}>{{.Name}}</option>{{end}}
+</select>
+{{if .Asked}}<p class="hint">The printer didn't answer, so its trays and media types can't be listed: {{.Asked}}</p>{{end}}
+</div>
+
+<div class="field">
+<label for="tray">Tray the checks are in</label>
+<input type="text" id="tray" name="tray" list="trays" value="{{.Account.Tray}}" required placeholder="tray-1"{{if eq .Field "tray"}} aria-invalid="true" autofocus{{end}}>
+<datalist id="trays">{{range .Attrs.Sources}}<option value="{{.}}">{{end}}</datalist>
+{{if .Attrs.Sources}}<p class="hint">This printer has {{join .Attrs.Sources}}.</p>{{end}}
+</div>
+
+<div class="field">
+<label for="media_type">Media type</label>
+<input type="text" id="media_type" name="media_type" list="types" value="{{.Account.MediaType}}" required{{if eq .Field "media_type"}} aria-invalid="true" autofocus{{end}}>
+<datalist id="types">{{range .Attrs.Types}}<option value="{{.}}">{{end}}</datalist>
+<p class="hint">Pre-printed check stock is stationery-preprinted on most printers. Set the tray to the same paper type on the printer's own panel.</p>
+</div>
+
+<div class="field">
+<label for="feed">Which way up</label>
+<input type="text" id="feed" name="feed" value="{{.Account.Feed}}" placeholder="face down, top edge in first">
+<p class="hint">Settled once with a plain sheet marked "top, this side up", and shown beside the Print button.</p>
+</div>
+
+<div class="field">
+<label for="ceiling">Ask again above</label>
+<input type="text" id="ceiling" name="ceiling" value="{{.Ceiling}}" inputmode="decimal" placeholder="10,000.00"{{if eq .Field "ceiling"}} aria-invalid="true" autofocus{{end}}>
+<p class="hint">A check for more than this is asked about a second time, with the amount in words.</p>
+</div>
+
+<fieldset class="field">
+<legend>Offset, in millimetres</legend>
+<label for="offset_x">To the right</label>
+<input type="text" id="offset_x" name="offset_x" value="{{.Account.Offset.X}}" inputmode="decimal"{{if eq .Field "offset"}} aria-invalid="true" autofocus{{end}}>
+<label for="offset_y">Down</label>
+<input type="text" id="offset_y" name="offset_y" value="{{.Account.Offset.Y}}" inputmode="decimal">
+<p class="hint">How far to move everything printed, to correct this printer. Set from the calibration page; a negative number moves it left or up.</p>
+</fieldset>
+
+<button type="submit">{{if .New}}Add the account{{else}}Save{{end}}</button>
+</form>
+
+{{if not .New}}
+<h2>Calibration page</h2>
+<p>The calibration page shows where this printer puts the check's boxes, so the offset above can be set. It goes through <strong>{{.Account.Tray}}</strong> with the same options as a check.</p>
+<p><strong>Take the checks out of {{.Account.Tray}} and put plain paper in first.</strong> A calibration page printed on a check spoils the check.</p>
+<form method="post" action="/settings/accounts/{{.Account.Key}}/calibrate">
+<input type="hidden" name="form_token" value="{{$.FormToken}}">
+<button type="submit" class="quiet">Print the calibration page on plain paper</button>
+</form>
+{{end}}
+<p class="aside"><a href="/settings">Back to Settings</a></p>
+{{end}}
+{{end}}

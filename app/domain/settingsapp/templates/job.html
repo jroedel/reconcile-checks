@@ -1,0 +1,16 @@
+{{define "title"}}Print job · Reconcile Checks{{end}}
+{{define "content"}}
+{{with .Data}}
+<h1>Job {{.Sent.Job}} on {{.Sent.Printer}}</h1>
+{{if .Error}}<p class="notice" role="alert">{{.Error}}</p>
+{{else}}
+<dl class="facts">
+<dt>Now</dt><dd>{{.Status.State}}</dd>
+{{if .Status.Reasons}}<dt>Because</dt><dd>{{join .Status.Reasons}}</dd>{{end}}
+{{if .Status.Message}}<dt>The printer says</dt><dd>{{.Status.Message}}</dd>{{end}}
+</dl>
+{{if not .Status.Done}}<p><a href="/settings/job?printer={{.Sent.Printer}}&amp;job={{.Sent.Job}}&amp;back={{.Back}}">Ask again</a></p>{{end}}
+{{end}}
+{{if .Back}}<p><a href="{{.Back}}">Back</a></p>{{end}}
+{{end}}
+{{end}}

@@ -1,0 +1,35 @@
+{{define "title"}}Settings · Reconcile Checks{{end}}
+{{define "content"}}
+<h1>Settings</h1>
+{{with .Data}}
+{{if .Error}}<p class="notice" role="alert">{{.Error}}</p>{{end}}
+{{if eq .Saved "printer"}}<p class="notice ok" role="status">The printer was removed.</p>{{end}}
+
+<h2>Accounts</h2>
+{{if .Settings.Accounts}}
+<dl class="facts">
+{{range .Settings.Accounts}}<dt><a href="/settings/accounts/{{.Key}}">{{.Name}}</a></dt><dd>ending {{.Last4}}, on {{.Printer}}, {{.Tray}}</dd>
+{{end}}</dl>
+{{else}}
+<p>No accounts yet. Add the account whose checks this computer prints; you'll need a printer first.</p>
+{{end}}
+{{if .Settings.Printers}}<p><a class="button quiet" href="/settings/accounts/new">Add an account</a></p>{{end}}
+
+<h2>Printers</h2>
+{{if .Settings.Printers}}
+<dl class="facts">
+{{range .Settings.Printers}}<dt><a href="/settings/printer?name={{.Name}}">{{.Name}}</a></dt><dd>{{.URL}}</dd>
+{{end}}</dl>
+{{else}}
+<p>No printers yet.</p>
+{{end}}
+<p><a class="button quiet" href="/settings/printers/find">Add a printer</a></p>
+
+<h2>About</h2>
+<dl class="facts">
+<dt>Version</dt><dd>{{$.Version}}</dd>
+<dt>Settings file</dt><dd>{{.Config}}</dd>
+<dt>Data folder</dt><dd>{{.Data}}</dd>
+</dl>
+{{end}}
+{{end}}

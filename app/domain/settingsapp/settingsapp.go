@@ -260,7 +260,7 @@ type accountView struct {
 
 // NewAccount is the form for an account this computer will print on.
 func (a *App) NewAccount(w http.ResponseWriter, r *http.Request) {
-	acct := settingsbus.Account{Stock: layoutbus.Names()[0], MediaType: "stationery-preprinted"}
+	acct := settingsbus.Account{Stock: layoutbus.Names()[0], MediaType: "stationery-preprinted", Feed: settingsbus.DefaultFeed}
 	a.account(w, r, http.StatusOK, true, acct, nil)
 }
 

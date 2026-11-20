@@ -53,6 +53,14 @@ type Account struct {
 	ReconcileID string
 }
 
+// DefaultFeed is which way up the stock goes in, for an account that hasn't
+// said: the answer a marked sheet gave on the M612's multipurpose tray
+// (docs/05-printing.md, "Which way up"), the printer both computers print
+// on. It is only words shown beside the Print button; nothing in the job
+// depends on it, so a printer that feeds the other way is told by its
+// account's own feed, settled with a marked sheet of its own.
+const DefaultFeed = "face up, stubs in first"
+
 // Settings is everything this package keeps.
 type Settings struct {
 	Printers []Printer
@@ -92,12 +100,29 @@ func New(store Storer) *Business { return &Business{store: store} }
 
 // Settings is everything, as it is now.
 func (b *Business) Settings() (Settings, error) {
-	return b.store.Load()
+	return b.load()
+}
+
+// load reads the settings, with the default feed given to an account that
+// has none, so that every page shows the same answer for it.
+func (b *Business) load() (Settings, error) {
+	s, err := b.store.Load()
+	if err != nil {
+		return Settings{}, err
+	}
+
+	for i := range s.Accounts {
+		if s.Accounts[i].Feed == "" {
+			s.Accounts[i].Feed = DefaultFeed
+		}
+	}
+
+	return s, nil
 }
 
 // Printer is one printer.
 func (b *Business) Printer(name string) (Printer, error) {
-	s, err := b.store.Load()
+	s, err := b.load()
 	if err != nil {
 		return Printer{}, err
 	}
@@ -112,7 +137,7 @@ func (b *Business) Printer(name string) (Printer, error) {
 
 // Account is one account.
 func (b *Business) Account(key string) (Account, error) {
-	s, err := b.store.Load()
+	s, err := b.load()
 	if err != nil {
 		return Account{}, err
 	}
@@ -166,7 +191,7 @@ func (b *Business) SavePrinter(was string, p Printer) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	s, err := b.store.Load()
+	s, err := b.load()
 	if err != nil {
 		return err
 	}
@@ -200,7 +225,7 @@ func (b *Business) RemovePrinter(name string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	s, err := b.store.Load()
+	s, err := b.load()
 	if err != nil {
 		return err
 	}
@@ -239,6 +264,10 @@ func (b *Business) SaveAccount(a Account, isNew bool) error {
 		a.Ceiling = checkbus.DefaultCeiling
 	}
 
+	if a.Feed == "" {
+		a.Feed = DefaultFeed
+	}
+
 	switch {
 	case !checkbus.ValidKey(a.Key):
 		return Invalid{Field: "key", Sentence: "A short name for the account, in small letters, digits and hyphens, such as checking-a. It names the account's folder of checks, and can't be changed later."}
@@ -261,7 +290,7 @@ func (b *Business) SaveAccount(a Account, isNew bool) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	s, err := b.store.Load()
+	s, err := b.load()
 	if err != nil {
 		return err
 	}

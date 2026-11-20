@@ -141,6 +141,9 @@ every check does. A printer's handling of letterhead and preprinted paper is
 a setting on its panel on some printers; if anything about tray 1 is
 changed there, mark a plain sheet and test again before the next check.
 
+It is also the program's default: a new account's form starts with it, and
+an account saved without a feed is given it (`settingsbus.DefaultFeed`).
+
 ## Did it print?
 
 The printer accepting a job is not the check being printed. The program

@@ -24,7 +24,7 @@ which is Reconcile's half.
 | [08 Signing in](08-signing-in.md) | OAuth for a native program, one key per computer, where it is kept | drafting |
 | [09 The Reconcile API](09-reconcile-api.md) | The calls, and what the program does with each answer | drafting |
 | **Delivery** | | |
-| [10 Install, update and releases](10-install-update-and-releases.md) | One file, self-update, releases, CI, testing on Windows | drafting |
+| [10 Install, update and releases](10-install-update-and-releases.md) | One file, self-update, push to deploy, CI, testing on Windows | drafting |
 | **Later** | | |
 | [11 Later](11-later.md) | What was considered and left out of the first version | outline |
 

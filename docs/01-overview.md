@@ -34,7 +34,8 @@ of checks** (decided 2026-11-20). So:
 - it prints over **IPP**, the same on both systems ([05](05-printing.md));
 - two computers number one checkbook ([06](06-writing-a-check.md), "Two
   computers, one stack");
-- it is **one file** from GitHub Releases that **updates itself**
+- it is **one file** from GitHub Releases that **updates itself**, and
+  every merge to `main` is a release it updates to: push to deploy
   ([10](10-install-update-and-releases.md)).
 
 ## One check, end to end
@@ -90,9 +91,10 @@ Reconcile's own pages.
 
 1. The open questions in these documents, starting with the stock
    ([04](04-stock-and-layout.md)).
-2. The release pipeline and self-update, with its tests
+2. Push to deploy: the release pipeline and self-update, with their tests
    ([10](10-install-update-and-releases.md)), on a program that does
-   nothing yet but serve a page. Updating must work before there is
+   nothing yet but serve a page. From then on every merge reaches both
+   computers. Updating must work before there is
    anything worth updating, because the first release without it is the
    last one a computer receives by itself.
 3. The layout and calibration on plain paper, then one real check, printed

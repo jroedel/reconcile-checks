@@ -67,9 +67,12 @@ Why that order:
   you" is a prior question to anything else.
 
 Not behind a session: the embedded CSS, scripts and fonts, and `/open`.
-**Here:** also `/callback`, where Reconcile's sign-in returns; it is guarded
-by OAuth's own `state` and PKCE, and the session it lands in is checked
-before the key is kept.
+**Here:** also `/callback`, where Reconcile's sign-in returns. It is reached
+by a redirect from Reconcile, a cross-site navigation, so the
+`SameSite=Strict` cookie is **not sent** there and no session can be checked
+on it. It checks OAuth's own `state` (held in this process) and `iss`,
+trades the code with PKCE, and redirects to a same-origin page, which has
+the session, before the key is kept.
 
 ## Writes must come from our own pages
 

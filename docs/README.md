@@ -25,6 +25,8 @@ which is Reconcile's half.
 | [09 The Reconcile API](09-reconcile-api.md) | The calls, and what the program does with each answer | drafting |
 | **Delivery** | | |
 | [10 Install, update and releases](10-install-update-and-releases.md) | One file, self-update, push to deploy, CI, testing on Windows | drafting |
+| **Look and voice** | | |
+| [12 Look and voice](12-look-and-voice.md) | Reconcile's look and words: colours, page chrome, the icon | drafting |
 | **Later** | | |
 | [11 Later](11-later.md) | What was considered and left out of the first version | outline |
 

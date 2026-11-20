@@ -67,6 +67,34 @@ on the paper. A golden test of each keeps them honest
 ([10](10-install-update-and-releases.md)). Which PDF and font libraries to
 use, pure Go only, is decided when the code is written.
 
+## Libraries and versions
+
+Decided when the build began (2026-11-20). Pure Go only, so one Linux runner
+builds for every system ([10](10-install-update-and-releases.md)).
+
+| Need | Choice | Why |
+|---|---|---|
+| Go | 1.26, as the sibling projects; 1.27 before v1.0 | Matches the `writing-go` skill; 1.26 leaves support when 1.28 ships |
+| SQLite | `modernc.org/sqlite` | As every sibling |
+| PDF | Our own small writer in `foundation/render` | A check is text and lines. One TrueType font embedded as a simple font with WinAnsi encoding: deterministic bytes for golden tests, the simplest font for a printer's own PDF interpreter, and no dependency |
+| Font and PNG | Go Mono, from `golang.org/x/image` | Openly licensed; the PDF's widths and the PNG's drawing come from the same font file |
+| Config and layouts | TOML, `github.com/BurntSushi/toml` | Readable by hand. Settings rewrites the file, so comments written into it by hand don't survive; `config.example.toml` says so |
+| IPP | `github.com/OpenPrinting/goipp` to encode, our own HTTP and TLS | The encoding is the fiddly part; the transport is a POST |
+| mDNS | Our own, on `golang.org/x/net/dns/dnsmessage` | One-shot queries only ([05](05-printing.md)) |
+| Keychain | `github.com/zalando/go-keyring`, with a file fallback | Windows Credential Manager and Linux Secret Service, pure Go |
+| Windows shortcut | `WScript.Shell` through `github.com/go-ole/go-ole` | The ordinary way to make a `.lnk` |
+| Windows icon | `go-winres`, a committed `.syso` | The exe carries its icon ([12](12-look-and-voice.md)) |
+
+**Characters.** The check's font covers English and the accented letters of
+Western European names (ñ, á, é, ü). A payee or memo with a character
+outside it is refused in the form, which says which character.
+
+**The Windows build is the same everywhere**: built as a GUI program (no
+console window) in CI as in the release, so CI tests what ships. It attaches
+to the terminal it was started from, if any, so `version` and `update
+--check` print there, and writes its log and any crash to a file in the data
+directory.
+
 ## Where files live
 
 | What | Linux | Windows |

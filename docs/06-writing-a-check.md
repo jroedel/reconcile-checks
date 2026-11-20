@@ -11,7 +11,7 @@ what happens after Print.
 | **Check no.** | Proposed; see "Numbering" | The person looks at the paper and confirms or corrects |
 | **Date** | Today | A date more than a week either side of today, or any date in the future (a post-dated check), is asked about again, not refused |
 | **Pay to** | — | Completes from payees already paid; see "Payees" |
-| **Amount** | — | `1234.5`, `1,234.50` and `$1234.50` are all `$1,234.50`. More than two decimals, zero, negative, or over the account's ceiling ([04](04-stock-and-layout.md)) is refused. Shown in words underneath as it is typed, so a slipped digit is read before it is printed |
+| **Amount** | — | `1234.5`, `1,234.50` and `$1234.50` are all `$1,234.50`. More than two decimals, zero or negative is refused; over the account's ceiling ([04](04-stock-and-layout.md)) is asked about a second time, with the amount in words. Shown in words underneath as it is typed, so a slipped digit is read before it is printed |
 | **Memo** | The payee's last memo | Optional, but asked; the accountants need the *what for* ([07](07-the-image.md)) |
 | **Stub note** | The payee's last stub note | Optional. Printed on both stubs: the detail the memo is too short for ([04](04-stock-and-layout.md)) |
 
@@ -144,15 +144,34 @@ One row per check printed, in SQLite ([02](02-architecture.md)):
 
 | Column | |
 |---|---|
-| account | Reconcile's id for the account |
+| account | This computer's **local key** for the account, never Reconcile's id (below) |
 | number | Unique per account |
-| written on | The date on the check |
+| written on | The date on the check, as text, `YYYY-MM-DD`: a date, not a moment |
 | payee, amount (cents), memo, stub note | As printed |
+| state | `printing` from the press of Print until "Did it print correctly?" is answered, then `printed` or `void` |
 | printed at | Unix milliseconds |
 | voided at, void reason | Empty unless voided |
 | reprint of | The number this check replaced, after a void |
 | sent at, void sent at | Empty until Reconcile has it |
-| Reconcile's answer | The last refusal, if any, shown on the Checks screen |
+| Reconcile's check id and url | From Reconcile's answer |
+| send attempts, next try | For sending again with growing waits |
+| Reconcile's last refusal, and the other check's details | Shown on the Checks screen, side by side |
+
+**Every column exists from the first version**, before Reconcile is reached
+([09](09-reconcile-api.md)), because the register on both computers will
+already hold real checks by then, and a register that must be rewritten
+when Reconcile arrives is one that can lose a check.
+
+**Accounts by a local key.** Checks are printed before this computer has
+ever signed in to Reconcile, so the register and the `checks/<account>/`
+folders name an account by a short key this computer gave it ("checking-a"),
+and Settings maps each key to Reconcile's id once signed in. Nothing is
+renamed when that happens.
+
+**A check left `printing`** (the program closed or crashed before the
+question was answered) is asked about again when the program next opens. An
+update never restarts the program while a check is `printing`
+([10](10-install-update-and-releases.md)).
 
 The register is what refuses a number twice on this computer, what is sent
 from, and what the Checks screen shows. It is not the books: Reconcile is.

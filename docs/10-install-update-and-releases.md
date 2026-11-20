@@ -19,6 +19,11 @@ requests are cited as sion-backup#N.
 
 No installer, no administrator, no second program, no runtime.
 
+The copy is made by reading and writing the file, not by the system's copy,
+so the "downloaded from the internet" mark stays on the download and
+doesn't follow the installed program: SmartScreen asks once, not again at
+the Start menu.
+
 **Where its user can write, and why.** sion-backup first installed under
 `%ProgramFiles%`, where the program can't replace itself, and those machines
 never updated again (sion-backup#69). It now installs under
@@ -31,6 +36,12 @@ certificate gets *"Windows protected your PC"* the first time it runs:
 itself, not by a browser, so they carry no "downloaded from the internet"
 mark and don't ask again. **No certificate** (decided 2026-11-20): it would
 remove a warning seen once per computer, for a fee every year.
+
+**Smart App Control**, on some Windows 11 computers, is stricter: when it is
+**On**, it blocks an unsigned program with no "Run anyway" at all. Check
+*Windows Security → App & browser control → Smart App Control* on each
+Windows computer before installing; if it is On, the no-certificate
+decision has to be revisited.
 
 ## Updating itself
 
@@ -56,7 +67,9 @@ it is:
    streams.
 5. **Verify**: its SHA-256 against `SHA256SUMS` from the same release, **and
    `SHA256SUMS`'s signature against a public key compiled into the
-   program**. sion-backup checks only the hash and says plainly that this
+   program** (set at build time: the release has the real key, the tests a
+   test key, and a release gate checks the published binary carries the
+   real one). sion-backup checks only the hash and says plainly that this
    proves the download whole, not genuine; a signature is the fix it
    intended and never built. Here it is built from the start: an Ed25519
    key, its private half a GitHub Actions secret used only by the release
@@ -69,16 +82,29 @@ it is:
    place; if the second rename fails, undo the first. Windows lets a running
    program be renamed but not overwritten or deleted, which is why it's two
    renames and not a copy.
-8. **Restart into it** when no check is in progress: at once if the page is
-   idle, or at the next start. The new process takes the lock and the same
-   port, and the open tab reconnects by itself ([03](03-the-local-app.md)).
+8. **Restart into it** when no check is in progress (none `printing`, none
+   waiting on *"Did it print correctly?"*): at once if the page is idle, or
+   at the next start. There is no service manager to restart a program a
+   person opened, so **the old process does it**: it gives up the lock and
+   the port, starts the new binary told to wait for the lock, and watches it
+   for about 30 seconds. The new one takes the same port, and the open tab
+   reconnects with its cookie still good ([03](03-the-local-app.md)).
 
-**Rollback.** sion-backup puts a new version on probation (sion-backup#22),
-recorded in a small file beside the binary, not in the database, which is
-the likeliest thing to be broken. Here: a new version passes probation when
-it has served a page and the register opened. If it fails to three times in
-a row, the program checks `.old` still runs, swaps back, and adds the
-version to the refused list, so it is not fetched again. The first update
+**Rollback, twice over.**
+
+- **At the restart**: if the new version doesn't answer within those 30
+  seconds, the old process swaps back, adds the version to the refused list,
+  so it is not fetched again, and starts itself again.
+- **Later**, by sion-backup's probation (sion-backup#22), recorded in a
+  small file beside the binary, not in the database, which is the likeliest
+  thing to be broken: a new version passes probation when it has served a
+  page and the register opened. If it fails to three times in a row, the
+  program checks `.old` still runs, swaps back, and refuses the version.
+
+**Two updates without a restart between them** can't swap: `.old` is then
+the running program, which Windows won't let be removed. The second update
+waits for the next start. A rename that fails because Defender is still
+scanning the new file is retried. The first update
 into a release that has probation is not protected by it; that is a reason
 to ship probation in the first release.
 
@@ -199,7 +225,11 @@ As in sion-backup, hand-rolled with `make` and `gh`, no GoReleaser:
 - `make cross`: the build for every target type-checks on each push.
 - `govulncheck`. `permissions: contents: read`, a concurrency group that
   cancels a stale run, `go-version-file: go.mod`.
-- Dependabot: Go modules weekly, grouped; Actions monthly.
+- Dependabot opens pull requests for Go modules and Actions, weekly,
+  grouped, and `go-version.yml` one for each Go patch release. **A person
+  merges them**, like any other: there is no auto-merge here, because a merge
+  is a release to both computers, and a merge made with GitHub's own token
+  would not start the release workflow anyway.
 - **Golden tests** of the renderers: the PNG of an invented check compared
   with one committed, and the PDF's placed text compared with its
   positions, so that a change which moves a box shows up in the pull

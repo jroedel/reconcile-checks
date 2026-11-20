@@ -296,3 +296,50 @@ only in the GitHub Actions secret the release job reads, and in an offline
 backup (a password manager). Losing it means a release whose new key the
 old programs can't verify, so they would have to be updated by hand once.
 Agents never make, read or set it ([`CLAUDE.md`](../CLAUDE.md)).
+
+## The signature, as built
+
+`SHA256SUMS.sig` is one line: the standard base64, with padding, of the raw
+64-byte Ed25519 signature over the exact bytes of `SHA256SUMS`. The release
+job can make it with OpenSSL alone:
+
+```sh
+openssl pkeyutl -sign -rawin -inkey key.pem -in SHA256SUMS | base64 -w0 > SHA256SUMS.sig
+```
+
+(tried with a throwaway key, and accepted by Go's `ed25519.Verify`). The
+updater checks it before reading any hash out of the file, and an updater
+with no key refuses to update at all (`foundation/selfupdate`).
+
+## Open questions
+
+Found while building `foundation/selfupdate`; each has a provisional answer
+in the code, to be confirmed or changed when it is wired in.
+
+1. **How the public key gets into the program**: a committed file embedded
+   with `//go:embed`, or set with `-ldflags` at build time? Either way the
+   tests use a key of their own, and a release gate checks the published
+   binary carries the real one. Its encoding (base64 of the 32 raw bytes
+   is the obvious one) is decided with it.
+2. **What "fails three times in a row" counts.** The code counts starts: a
+   start on probation that never calls `Passed` has failed, and the fourth
+   rolls back. With no service manager, a failed start is a person opening
+   the program again; after a rollback the program starts the restored
+   version and exits. The start the old process launches at the restart is
+   the first.
+3. **No update while on probation.** The code waits for the next start not
+   only when `.old` can't be removed, but also while the running version
+   hasn't passed. So the check at start belongs after `Passed`.
+4. **The signature doesn't name the version.** `SHA256SUMS` lists files, so
+   what ties a binary to its tag is the smoke test (the binary must report
+   the version it was offered as). An old signed release republished under
+   a new tag is refused only by that. Should the signed file also carry the
+   version?
+5. **A draft or pre-release at `/latest`** is an error today; "nothing to
+   do" would also be defensible.
+6. **Taking a version off the refused list.** `Forget` exists; no button or
+   command calls it yet (sion-backup has `update --forget`). The list keeps
+   the last 10.
+7. **On Windows**, the staged file is `reconcile-checks.new.exe` (it is run
+   for the smoke test, so `.exe` stays last), and a rename is retried on
+   access denied as well as on a sharing violation.

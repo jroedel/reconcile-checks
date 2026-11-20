@@ -24,6 +24,7 @@ import (
 	"github.com/jroedel/reconcile-checks/business/domain/print/printbus"
 	"github.com/jroedel/reconcile-checks/business/domain/settings/settingsbus"
 	"github.com/jroedel/reconcile-checks/business/domain/settings/stores/settingsfile"
+	"github.com/jroedel/reconcile-checks/business/domain/update/updatebus"
 	"github.com/jroedel/reconcile-checks/foundation/ipp"
 	"github.com/jroedel/reconcile-checks/foundation/ipp/ipptest"
 	"github.com/jroedel/reconcile-checks/foundation/mdns"
@@ -115,6 +116,8 @@ func setup(t *testing.T) *fixture {
 		Print:    printbus.New(settings, &ipp.Client{User: "reconcile-checks"}),
 		Finder:   finder{printer},
 		Checks:   checks,
+		Updates:  updatebus.New(updatebus.Config{Version: "v0.0.0-test", Data: t.TempDir()}),
+		Context:  t.Context(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -197,6 +200,8 @@ func TestTheGates(t *testing.T) {
 		{"a preview of an amount that isn't one", req{method: "GET", path: "/preview.png?amount=12.345", session: true}, http.StatusUnprocessableEntity},
 		{"adding a printer from another website", req{method: "POST", path: "/settings/printers", session: true, site: "cross-site", origin: "https://evil.example", form: f.token()}, http.StatusForbidden},
 		{"adding a printer without the session", req{method: "POST", path: "/settings/printers", site: "same-origin", origin: "http://" + host, form: f.token()}, http.StatusUnauthorized},
+		{"update now from another website", req{method: "POST", path: "/settings/update", session: true, site: "cross-site", origin: "https://evil.example", form: f.token()}, http.StatusForbidden},
+		{"update now with no session", req{method: "POST", path: "/settings/update", site: "same-origin", origin: "http://" + host}, http.StatusUnauthorized},
 		{"a calibration page from another website", req{method: "POST", path: "/settings/printer/calibrate", session: true, site: "cross-site", origin: "https://evil.example", form: f.token()}, http.StatusForbidden},
 		{"a printer that isn't there", req{method: "GET", path: "/settings/printer?name=Nowhere", session: true}, http.StatusNotFound},
 		{"an account that isn't there", req{method: "GET", path: "/settings/accounts/nowhere", session: true}, http.StatusNotFound},
@@ -640,5 +645,24 @@ func TestWhatTheScriptAsks(t *testing.T) {
 
 	if w := f.do(req{method: "GET", path: "/write/amount?amount=1"}); w.Code != http.StatusUnauthorized {
 		t.Errorf("the amount without the session: %d", w.Code)
+	}
+}
+
+// Settings says whether this copy updates itself, and a copy that can't
+// refuses Update now, saying why rather than pretending to look.
+func TestSettingsSaysWhetherThisCopyUpdates(t *testing.T) {
+	f := setup(t)
+
+	if page := f.get(t, "/settings"); !strings.Contains(page, "<h2>Updates</h2>") || !strings.Contains(page, "development build") {
+		t.Errorf("the Updates section:\n%s", page)
+	}
+
+	w := f.post(t, "/settings/update", url.Values{})
+	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "development build") {
+		t.Errorf("Update now on a development build: %d\n%s", w.Code, w.Body)
+	}
+
+	if page := f.get(t, "/settings/update/status"); !strings.Contains(page, `"state":"idle"`) || !strings.Contains(page, "development build") {
+		t.Errorf("the status for the script: %s", page)
 	}
 }

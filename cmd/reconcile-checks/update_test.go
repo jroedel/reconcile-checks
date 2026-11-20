@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"slices"
 	"strconv"
 	"testing"
@@ -38,31 +37,6 @@ func TestTheKeyIsOneWordInVersion(t *testing.T) {
 	}
 
 	if _, err := updateKey(); err != nil {
-		t.Error(err)
-	}
-}
-
-func TestTheCheckIsOnceADay(t *testing.T) {
-	data := t.TempDir()
-	now := time.Now()
-
-	if !checkDue(data, now) {
-		t.Error("never checked, and not due")
-	}
-
-	if err := checked(data, now); err != nil {
-		t.Fatal(err)
-	}
-
-	if checkDue(data, now.Add(23*time.Hour)) {
-		t.Error("due again within the day")
-	}
-
-	if !checkDue(data, now.Add(checkEvery)) {
-		t.Error("not due a day later")
-	}
-
-	if _, err := os.Stat(checkedPath(data)); err != nil {
 		t.Error(err)
 	}
 }

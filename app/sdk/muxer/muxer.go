@@ -32,6 +32,7 @@ package muxer
 
 import (
 	"cmp"
+	"context"
 	"database/sql"
 	"log/slog"
 	"net/http"
@@ -48,6 +49,7 @@ import (
 	"github.com/jroedel/reconcile-checks/business/domain/check/checkbus"
 	"github.com/jroedel/reconcile-checks/business/domain/print/printbus"
 	"github.com/jroedel/reconcile-checks/business/domain/settings/settingsbus"
+	"github.com/jroedel/reconcile-checks/business/domain/update/updatebus"
 	"github.com/jroedel/reconcile-checks/foundation/sqldb"
 	"github.com/jroedel/reconcile-checks/foundation/web"
 )
@@ -89,7 +91,13 @@ type Config struct {
 	Settings *settingsbus.Business
 	Print    *printbus.Business
 	Finder   settingsapp.Finder
-	Checks   *checkbus.Business
+
+	// Updates is updating itself, for Settings: nil in tests that don't
+	// need it. Context is the program's own, which a check for an update
+	// started from a page outlives the page with.
+	Updates *updatebus.Business
+	Context context.Context
+	Checks  *checkbus.Business
 }
 
 // DefaultStock is the one stock this program knows today.
@@ -119,6 +127,8 @@ func New(cfg Config) (http.Handler, error) {
 		Finder:     cfg.Finder,
 		ConfigFile: cfg.ConfigFile,
 		DataDir:    cfg.DataDir,
+		Updates:    cfg.Updates,
+		Context:    cfg.Context,
 	})
 	if err != nil {
 		return nil, err
@@ -160,6 +170,10 @@ func New(cfg Config) (http.Handler, error) {
 	app.HandleFunc("POST /settings/printer/checks", settings.SavePrinterChecks)
 	app.HandleFunc("POST /settings/printer/calibrate", settings.Calibrate)
 	app.HandleFunc("GET /settings/job", settings.Job)
+	app.HandleFunc("POST /settings/update", settings.UpdateNow)
+	app.HandleFunc("GET /settings/update", settings.Updating)
+	app.HandleFunc("GET /settings/update/status", settings.UpdateStatus)
+	app.HandleFunc("POST /settings/update/forget", settings.ForgetRefused)
 	app.HandleFunc("GET /events", cfg.Presence.Events)
 	app.HandleFunc("GET /preview.png", preview.Preview)
 	app.HandleFunc("POST /quit", launch.Quit)

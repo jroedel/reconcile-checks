@@ -93,6 +93,7 @@ CASES=(
   #    installs, and restarts into the new version by itself.
   "app-restart|none|next|app-updated|"
   "app-restart-hangs|none|hang|app-rolled-back|"
+  "update-now|none|next|update-now|"
 
   # -- A version that installs, starts, and keeps failing: probation gives
   #    up on it at the fourth start.

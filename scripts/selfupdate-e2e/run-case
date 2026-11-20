@@ -7,6 +7,7 @@
 #   NEXT_VERSION     what the release offers
 #   EXPECT           updated | refused | no-key | nothing-to-do | not-writable
 #                    | app-updated | app-rolled-back | probation-rolled-back
+#                    | update-now
 #   INSTALL_DIR      where the program is installed (default: the person's own)
 #   INSTALL_OWNER    who owns that folder (default: the person)
 #
@@ -109,6 +110,84 @@ wait_log() {
 open_program() { as_person "$EXE" --no-browser --config "$CONFIG" >>/tmp/app.out 2>&1; }
 
 show_log() { sed 's/^/      log | /' "$DATA/reconcile-checks.log" 2>/dev/null | grep -i -E 'update|version|probation|went back|restart|refus|gave up' | tail -${1:-15}; }
+
+# http sends one request to the program, over bash's own TCP, and prints the
+# whole answer: http METHOD PATH [COOKIE] [FORM].
+http() {
+  local method=$1 path=$2 cookie=${3:-} form=${4:-}
+  timeout 10 bash -c '
+    exec 3<>/dev/tcp/127.0.0.1/'"$PORT"' || exit 1
+    {
+      printf "%s %s HTTP/1.0\r\n" "$0" "$1"
+      printf "Host: 127.0.0.1:'"$PORT"'\r\n"
+      [ -n "$2" ] && printf "Cookie: %s\r\n" "$2"
+      if [ "$0" = POST ]; then
+        printf "Origin: http://127.0.0.1:'"$PORT"'\r\nSec-Fetch-Site: same-origin\r\n"
+        printf "Content-Type: application/x-www-form-urlencoded\r\nContent-Length: %d\r\n" "${#3}"
+      fi
+      printf "\r\n%s" "$3"
+    } >&3
+    cat <&3' "$method" "$path" "$cookie" "$form" 2>/dev/null | tr -d '\r'
+}
+
+# ---------------------------------------------------------------------------
+# Update now: the person presses it in Settings, in the page the program
+# opened, and the program restarts into the new version; the page's session
+# holds across the restart.
+# ---------------------------------------------------------------------------
+
+if [ "$EXPECT" = update-now ]; then
+  # Today's check already made, so only the button can start one.
+  as_person touch "$DATA/update-checked"
+
+  open_program &
+
+  wait_log "msg=starting version=$CURRENT_VERSION" 20 && good "the program started as $CURRENT_VERSION" \
+                                                     || bad "the program never started"
+  wait_health "$CURRENT_VERSION" 20 || bad "it never answered"
+
+  sleep 3
+  grep -q 'restarting into the update' "$DATA/reconcile-checks.log" && bad "it updated without being asked"
+
+  # The address it printed, with its one-time key: what the browser opens.
+  open=$(grep -o "http://127.0.0.1:$PORT/open?k=[^ ]*" /tmp/app.out | head -1)
+  cookie=$(http GET "${open#http://127.0.0.1:$PORT}" | sed -n 's/^Set-Cookie: \([^;]*\).*/\1/p' | head -1)
+  [ -n "$cookie" ] && good "opened the page, as the browser does: a session" || bad "no session from $open"
+
+  token=$(http GET /settings "$cookie" | grep -o 'name="form_token" value="[^"]*"' | head -1 | sed 's/.*value="//; s/"$//')
+  [ -n "$token" ] || bad "no form on the Settings page"
+
+  answer=$(http POST /settings/update "$cookie" "form_token=$token")
+
+  if head -1 <<<"$answer" | grep -q ' 303 '; then
+    good "pressed Update now"
+  else
+    bad "Update now was answered: $(head -1 <<<"$answer")"
+  fi
+
+  if wait_health "$NEXT_VERSION" 90; then
+    good "it restarted into $NEXT_VERSION: /healthz says ok $NEXT_VERSION"
+  else
+    bad "it never came back as $NEXT_VERSION (it says: $(health))"
+  fi
+
+  [[ "$(installed)" == *" $NEXT_VERSION "* ]] && good "the program on the disk is $NEXT_VERSION" \
+                                             || bad "the program on the disk is $(installed)"
+
+  wait_gone "$EXE.probation" 15 && good "probation passed" || bad "still on probation"
+
+  if http GET "/settings?updated=$NEXT_VERSION" "$cookie" | grep -q "this is $NEXT_VERSION now"; then
+    good "and the same page's session holds: Settings says this is $NEXT_VERSION now"
+  else
+    bad "the session didn't survive the restart, or Settings doesn't say so"
+  fi
+
+  sleep 1
+  [ "$(copies)" = 1 ] && good "one copy running" || bad "$(copies) copies running"
+
+  show_log
+  exit "$fail"
+fi
 
 # ---------------------------------------------------------------------------
 # The program running: it checks at start, installs, and restarts itself.

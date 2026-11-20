@@ -33,6 +33,7 @@ import (
 	"github.com/jroedel/reconcile-checks/business/domain/print/printbus"
 	"github.com/jroedel/reconcile-checks/business/domain/settings/settingsbus"
 	"github.com/jroedel/reconcile-checks/business/domain/settings/stores/settingsfile"
+	"github.com/jroedel/reconcile-checks/business/domain/update/updatebus"
 	"github.com/jroedel/reconcile-checks/foundation/browser"
 	"github.com/jroedel/reconcile-checks/foundation/ipp"
 	"github.com/jroedel/reconcile-checks/foundation/lockfile"
@@ -172,7 +173,35 @@ func start(opt options, stdout, stderr io.Writer) (*relaunch, error) {
 		Accounts: settings.ForChecks(),
 	})
 
+	// restartInto is the version to start once this copy has let go of the
+	// lock and the port: set when an update was installed, by the check at
+	// start or by Update now (updatebus), which ask through Restart.
+	var restartInto atomic.Pointer[string]
+
+	// An interface holding a nil pointer is not nil; updatebus must see none.
+	var canUpdate updatebus.Updater
+	if updater != nil {
+		canUpdate = updater
+	}
+
+	key, _ := updateKey()
+
+	updates := updatebus.New(updatebus.Config{
+		Updater: canUpdate,
+		Version: version,
+		HasKey:  key != nil,
+		Data:    cfg.Data,
+		Busy:    checks.Busy,
+		Restart: func(v string) {
+			restartInto.Store(&v)
+			quit()
+		},
+		Log: log,
+	})
+
 	handler, err := muxer.New(muxer.Config{
+		Updates:    updates,
+		Context:    ctx,
 		Checks:     checks,
 		Settings:   settings,
 		Print:      printbus.New(settings, client),
@@ -208,8 +237,6 @@ func start(opt options, stdout, stderr io.Writer) (*relaunch, error) {
 	// register opened: an update on probation has passed. Only then is the
 	// day's check made, since no update installs over one not yet proven
 	// (docs/10, Open questions 3).
-	var restartInto atomic.Pointer[string]
-
 	go func() {
 		self := func() int { return ln.Addr().(*net.TCPAddr).Port }
 		if !waitHealthy(ctx, self, version, restartWithin) {
@@ -222,11 +249,7 @@ func start(opt options, stdout, stderr io.Writer) (*relaunch, error) {
 		}
 
 		updater.Passed()
-
-		if v, ok := checkForUpdate(ctx, log, updater, checks, cfg.Data); ok {
-			restartInto.Store(&v)
-			quit()
-		}
+		updates.CheckIfDue(ctx)
 	}()
 
 	address := "http://127.0.0.1:" + port + "/open?k=" + url.QueryEscape(sessions.Mint())
@@ -241,50 +264,6 @@ func start(opt options, stdout, stderr io.Writer) (*relaunch, error) {
 	}
 
 	return nil, nil
-}
-
-// checkForUpdate is the check at start (docs/10, "When"): at most once a day,
-// in the background. When it installs a version, it waits until no check is
-// printing, then reports the version to restart into.
-func checkForUpdate(ctx context.Context, log *slog.Logger, u *selfupdate.Updater, checks *checkbus.Business, data string) (string, bool) {
-	if !checkDue(data, time.Now()) {
-		return "", false
-	}
-
-	rel, ok, err := u.Apply(ctx)
-
-	switch {
-	case errors.Is(err, selfupdate.ErrNoKey):
-		log.Debug("not checking for updates", "reason", err)
-		return "", false
-	case err != nil:
-		log.Warn("the check for an update failed", "err", err)
-		return "", false
-	}
-
-	if err := checked(data, time.Now()); err != nil {
-		log.Warn("could not record the check for an update", "err", err)
-	}
-
-	if !ok {
-		return "", false
-	}
-
-	// Never while a check is printing or waiting on "Did it print
-	// correctly?": that is the state printing, until it is answered.
-	for {
-		busy, err := checks.Busy(ctx)
-		if err == nil && !busy {
-			return rel.Version, true
-		}
-
-		select {
-		case <-ctx.Done():
-			// Closing anyway: the next start is the new version.
-			return "", false
-		case <-time.After(10 * time.Second):
-		}
-	}
 }
 
 // takeLock takes the single-instance lock, waiting up to wait for it if asked

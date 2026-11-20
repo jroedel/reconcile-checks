@@ -49,7 +49,15 @@ Automatic, because nobody will remember to update two computers.
 
 **When.** At start, at most once a day, in the background: the page is
 usable at once and never waits on GitHub. Also **Update now** in Settings,
-and `reconcile-checks update`. Never while a print is being followed or
+and `reconcile-checks update`.
+
+**Settings → Updates**, as built (`business/domain/update/updatebus`): the
+version; when it last checked; why this copy doesn't update, if it doesn't
+(a development build, no key, a folder it can't write); **Update now**,
+which checks in the background and opens a page that follows the check,
+the install, the wait for printing to finish and the restart, coming back
+to Settings by itself when the new version answers; and the versions this
+computer gave up on, with **Let it install them again**. Never while a print is being followed or
 waiting on *"Did it print correctly?"*.
 
 **How**, in sion-backup's order (`foundation/selfupdate`), which applies as
@@ -310,6 +318,10 @@ with no way out to the real GitHub. Cases:
   watches it answer `/healthz`; the new one passes probation and the old
   one leaves. And when the new version never answers, the old one stops
   it, puts itself back, refuses that version and starts again.
+- **Update now**: the running program, its day's check already made, gets
+  the button pressed from its own Settings page (a session from the
+  one-time address it printed, the form token, a same-origin POST), restarts
+  into the new version, and the same session reads Settings afterwards.
 - **Probation**: a version that installs and then fails at every start is
   given up at the fourth, which starts the previous version, and `update`
   won't install it again.

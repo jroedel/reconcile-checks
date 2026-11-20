@@ -15,10 +15,13 @@ inventing a specific. What Reconcile does is decided in Reconcile:
 [`docs/09-reconcile-api.md`](docs/09-reconcile-api.md) is this program's
 view of that contract, and the issue wins when they differ.
 
-**This project is in its documentation phase. Do not write code yet** — no
-`go.mod`, no `.go` files, no Makefile, no workflows, no layouts. The work right
-now is the design documents; the coding rules below are here so they are
-settled before the first line is written, not because they apply today.
+**This project is being built**, milestone by milestone, in the order of
+[`docs/01-overview.md`](docs/01-overview.md), "Order of work": the skeleton,
+then self-update and push to deploy, then money, layouts, the register,
+printing and the app, and Reconcile last, once reconcile#166 is built. Each
+milestone is one or more pull requests. Some steps are a person's and never
+an agent's: printing on real stock, measuring the paper, and the release
+signing key (section 6).
 
 The rules below were imported from
 [drop-in forms](https://github.com/jroedel/dropin-forms), which took them

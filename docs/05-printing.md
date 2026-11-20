@@ -77,8 +77,14 @@ from those lists.
 
 **Kept by name, not number.** The M612 is at `192.168.2.92` today, an
 address the router may change. Its announced name (`NPI46CBDF.local`) follows
-it, and Windows 10 and later resolve `.local` names as Linux does. A typed
-address is kept as typed.
+it. Windows 10 and later resolve `.local` names themselves. **On Linux the
+program resolves them itself** (`foundation/mdns`): a pure-Go build doesn't
+go through the system's mDNS resolver, so `NPI46CBDF.local` would not be
+found otherwise. A typed address is kept as typed.
+
+Finding printers sends one-shot queries from an ordinary port and asks for
+the answers to come back to it directly, rather than listening on the mDNS
+port, so Windows Firewall never asks about it.
 
 **This computer's queues are not used.** This Linux machine has four for the
 M612: one over USB through `ipp-usb`, one IPP Everywhere queue to

@@ -26,14 +26,23 @@ time it runs ([10](10-install-update-and-releases.md)).
 
 The register is one SQLite file, and one program writes it. So the program
 takes an **operating-system lock** on a file in its data directory when it
-starts, and writes beside it the port it is serving on and a launch secret
-(readable only by this user).
+starts. Beside it, in a separate `runtime.json` readable only by this user,
+it keeps the port it is serving on, a **launch key** (long-lived, for this
+install) and the **session key** that signs the page's cookie. (On Linux the
+file is mode 0600; on Windows it is protected by living in the user's own
+`%LocalAppData%`.)
 
-- **Opened again while running**: the lock is held, so the second start reads
-  the port and secret, opens the browser at the running copy, and exits. A
-  second click on the shortcut is never an error.
+- **Opened again while running**: the lock is held, so the second start
+  reads the launch key and asks the running copy, at `/launch`, for a fresh
+  one-time address, opens the browser at it, and exits. A second click on
+  the shortcut is never an error.
 - **After a crash**: the operating system released the lock when the process
-  died, so the next start simply takes it. No stale lock to delete.
+  died, so the next start simply takes it. No stale lock to delete. (On
+  Windows the lock is on a byte range past the end of the file, because
+  Windows locks are mandatory and would otherwise stop the file being read.)
+- **After an update**, the new program waits for the old one's lock rather
+  than handing over to it ([10](10-install-update-and-releases.md)). The
+  session key is the same, so the open tab's cookie still holds.
 
 ## When it closes
 
@@ -74,8 +83,10 @@ treated as a web server like any other, with the defences of the sibling
 projects ([`CLAUDE.md`](../CLAUDE.md), `.claude/skills/writing-go-web`):
 
 1. **A launch secret.** The browser is opened at
-   `/open?k=<one-time secret>`, which the server trades for a session cookie
-   (`HttpOnly`, `SameSite=Strict`) and redirects away from. A request without
+   `/open?k=<one-time token>`, which the server trades for a session cookie
+   (`HttpOnly`, `SameSite=Strict`, signed with the session key) and
+   redirects away from. The token is made by the running program, for its
+   own start or for a second start that proved it holds the launch key. A request without
    the cookie gets only a page saying to open the program from its shortcut.
    Another user on the computer can't read the secret; a website can't guess
    it.

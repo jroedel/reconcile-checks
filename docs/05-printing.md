@@ -103,6 +103,14 @@ Finding printers sends one-shot queries from an ordinary port and asks for
 the answers to come back to it directly, rather than listening on the mDNS
 port, so Windows Firewall never asks about it.
 
+Each query goes out of **every** network the computer is on, not only the
+one the routing table picks for multicast. On the development computer that
+route led into a VPN tunnel, and the M612 was never asked (found
+2026-11-20); a computer running Docker can do the same. Tunnels, loopback
+and networks that are down are skipped. Asked this way, the office network
+answers with the M612 and three other printers, `_ipp._tcp` and `_ipps._tcp`
+alike.
+
 **This computer's queues are not used.** This Linux machine has four for the
 M612: one over USB through `ipp-usb`, one IPP Everywhere queue to
 `ipps://NPI46CBDF.local:631/ipp/print`, one raw socket to port 9100, and one

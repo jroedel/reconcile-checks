@@ -119,6 +119,12 @@ outstanding is harmless: either way the number shows as used.
 | `404`, `code: "no_check"` | No check has the number: the send never arrived. Sends it, then voids again |
 | `401`, no answer, `5xx` | Keeps it to void, in order |
 
+**A void is only sent for a check Reconcile took from this computer.**
+Reconcile voids by number: a void sent after a refused send ("another check
+has this number") would void the other computer's check. So the queue sends
+the check first, and sends its void only once the check's send was taken
+(outstanding, attached, or already there).
+
 **Once a check's void is sent, it is never sent again.** Reconcile skips
 voided checks when it looks for a repeat, so the same check sent after its
 void would be a new check outstanding. The queue only ever sends a check

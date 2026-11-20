@@ -115,11 +115,14 @@ func setup(t *testing.T) *fixture {
 
 	signIn := signinbus.New(signinbus.Config{Client: client, Store: secretstore.File(filepath.Join(t.TempDir(), "key")), Device: "Office"})
 
+	inBooks := booksbus.New(booksbus.Config{SignIn: signIn, Settings: settings})
+
 	checks := checkbus.New(checkbus.Config{
 		Store:    checkdb.NewStore(db),
 		Files:    checkfiles.New(filepath.Join(t.TempDir(), "checks")),
 		Accounts: settings.ForChecks(),
-		Books:    booksbus.New(booksbus.Config{SignIn: signIn, Settings: settings}),
+		Books:    inBooks,
+		Sender:   inBooks,
 	})
 
 	h, err := muxer.New(muxer.Config{
@@ -233,6 +236,8 @@ func TestTheGates(t *testing.T) {
 		{"signing in without the session", req{method: "GET", path: "/settings/reconcile/sign-in"}, http.StatusUnauthorized},
 		{"signing out from another website", req{method: "POST", path: "/settings/reconcile/sign-out", session: true, site: "cross-site", origin: "https://evil.example", form: f.token()}, http.StatusForbidden},
 		{"signing out without the session", req{method: "POST", path: "/settings/reconcile/sign-out", site: "same-origin", origin: "http://" + host, form: f.token()}, http.StatusUnauthorized},
+		{"send now from another website", req{method: "POST", path: "/checks/send", session: true, site: "cross-site", origin: "https://evil.example", form: f.token()}, http.StatusForbidden},
+		{"send now without the session", req{method: "POST", path: "/checks/send", site: "same-origin", origin: "http://" + host, form: f.token()}, http.StatusUnauthorized},
 		{"a preview of a payee too long", req{method: "GET", path: "/preview.png?amount=1&payee=" + strings.Repeat("x", 300), session: true}, http.StatusUnprocessableEntity},
 	}
 
@@ -938,5 +943,117 @@ func TestTheNumberIsCheckedWithReconcileBeforePrinting(t *testing.T) {
 
 	if w := f.post(t, "/checks", form); w.Code != http.StatusSeeOther {
 		t.Fatalf("offline, answered: %d\n%s", w.Code, w.Body)
+	}
+}
+
+// Printed and confirmed, a check reaches Reconcile at once, with its image
+// and through this computer's key; offline it waits, and Send now sends it;
+// voided later, its void follows it.
+func TestAPrintedCheckIsSentToReconcile(t *testing.T) {
+	f := setup(t)
+	f.account(t)
+	f.signIn(t)
+
+	a, _ := f.settings.Account("checking-a")
+	a.ReconcileID = "acc1"
+	if err := f.settings.SaveAccount(a, false); err != nil {
+		t.Fatal(err)
+	}
+
+	print := func(number string) {
+		t.Helper()
+
+		form := check(number)
+		form.Add("answered", "new-payee=payee a plumbing")
+
+		w := f.post(t, "/checks", form)
+		if w.Code == http.StatusOK { // asked: offline, the number couldn't be checked
+			for _, a := range answers(w.Body.String()) {
+				form.Add("answered", a)
+			}
+
+			w = f.post(t, "/checks", form)
+		}
+
+		if w.Code != http.StatusSeeOther {
+			t.Fatalf("printing %s: %d\n%s", number, w.Code, w.Body)
+		}
+	}
+
+	print("1043")
+
+	w := f.post(t, "/checks/checking-a/1043/printed", url.Values{})
+	if w.Code != http.StatusSeeOther || !strings.Contains(w.Header().Get("Location"), "sent=outstanding") {
+		t.Fatalf("yes: %d to %q", w.Code, w.Header().Get("Location"))
+	}
+
+	if page := f.get(t, w.Header().Get("Location")); !strings.Contains(page, "Check 1043 printed and sent: it is in Reconcile on Checking A, outstanding") {
+		t.Errorf("after yes:\n%s", page)
+	}
+
+	sent := f.books.Checks("acc1")["1043"]
+	if sent.Payee != "Payee A Plumbing" || sent.Amount != "1234.50" || sent.Memo != "Kitchen drain repair" || !strings.HasPrefix(string(sent.Image), "\x89PNG") || !strings.HasPrefix(sent.Key, "rcn_") {
+		t.Errorf("Reconcile has %+v", sent)
+	}
+
+	if page := f.get(t, "/checks/checking-a/1043"); !strings.Contains(page, "Reconcile has it.") || !strings.Contains(page, sent.URL) {
+		t.Errorf("the check's page doesn't say Reconcile has it, with its link")
+	}
+
+	// Offline: kept, and sent by Send now.
+	f.books.Down(true)
+	print("1044")
+
+	w = f.post(t, "/checks/checking-a/1044/printed", url.Values{})
+	if !strings.Contains(w.Header().Get("Location"), "sent=later") {
+		t.Fatalf("yes, offline: %q", w.Header().Get("Location"))
+	}
+
+	if page := f.get(t, "/checks/checking-a/1044"); !strings.Contains(page, "Waiting to be sent: Reconcile couldn&#39;t be reached (tried 1 time)") {
+		t.Errorf("the waiting check's page:\n%s", page)
+	}
+
+	f.books.Down(false)
+
+	w = f.post(t, "/checks/send", url.Values{})
+	if w.Code != http.StatusSeeOther || !strings.Contains(f.get(t, w.Header().Get("Location")), "Sent 1 check to Reconcile.") {
+		t.Errorf("send now: %d to %q", w.Code, w.Header().Get("Location"))
+	}
+
+	if _, ok := f.books.Checks("acc1")["1044"]; !ok {
+		t.Error("send now didn't send 1044")
+	}
+
+	// Voided later: the void follows.
+	if w := f.post(t, "/checks/checking-a/1043/void", url.Values{"reason": {"lost in the mail"}}); w.Code != http.StatusSeeOther {
+		t.Fatalf("void: %d", w.Code)
+	}
+
+	f.post(t, "/checks/send", url.Values{})
+
+	if got := f.books.Checks("acc1")["1043"].State; got != "void" {
+		t.Errorf("1043 in Reconcile is %q after its void", got)
+	}
+
+	if page := f.get(t, "/checks/checking-a/1043"); !strings.Contains(page, "Reconcile has it, voided.") {
+		t.Errorf("the voided check's page doesn't say Reconcile has it voided")
+	}
+
+	// Another computer's check on a number: refused, side by side.
+	f.books.AddCheck("acc1", reconciletest.Check{Number: "1046", Amount: "120.00", Payee: "Payee B", WrittenOn: "2026-11-18"})
+	f.books.Down(true) // so the number isn't asked about before printing
+	print("1046")
+	f.books.Down(false)
+
+	w = f.post(t, "/checks/checking-a/1046/printed", url.Values{})
+	if !strings.Contains(w.Header().Get("Location"), "sent=refused") {
+		t.Fatalf("yes, on a number another check has: %q", w.Header().Get("Location"))
+	}
+
+	page := f.get(t, "/checks/checking-a/1046")
+	for _, want := range []string{"Reconcile refused it: Check 1046 in this account says something else", "Reconcile&#39;s check 1046: to Payee B for $120.00, written November 18, 2026.", "Correct its number"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the refused check's page lacks %q", want)
+		}
 	}
 }

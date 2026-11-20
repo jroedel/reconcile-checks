@@ -49,6 +49,24 @@ screen does it at once, and each check there says whether it was sent and
 what Reconcile answered ([09](09-reconcile-api.md)). Sending twice must not make two checks in Reconcile; see
 [09](09-reconcile-api.md), "Sending again".
 
+As built:
+
+- **Yes** sends the check at once, waiting up to twenty seconds, and the
+  form says what became of it: in Reconcile, outstanding; attached, the
+  bank having paid it already; or kept here, and why.
+- What is waiting is sent when the program starts and every minute after,
+  and at once after a void or a corrected number. A try that fails for
+  want of Reconcile waits a minute, then two, four, and so on to an hour.
+  Signed out, nothing is tried and nothing counted until someone signs in.
+- A refusal (another check has the number, the bank paid another amount,
+  the account archived, a role that can't add checks) waits for the person:
+  the check's page shows Reconcile's sentence and what it has instead,
+  side by side. Correcting the number sends it afresh; **Send now** tries
+  every waiting check, refused ones included.
+- A check voided after it was sent keeps the image it was sent with, and
+  Reconcile marks it void; one voided before it was sent (a jam) goes with
+  "VOID" across it.
+
 The PDF and the PNG are kept locally after sending
 ([02](02-architecture.md)).
 

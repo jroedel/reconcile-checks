@@ -11,18 +11,24 @@
 package reconciletest
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jroedel/reconcile-checks/business/types/money"
 )
 
 // The paths Reconcile serves its sign-in on (its oauthapp).
@@ -87,6 +93,8 @@ type Server struct {
 	mu       sync.Mutex
 	books    map[string]*book // by account id
 	down     bool             // answering 503 to the API, as Reconcile being deployed
+	next     *answer          // what the next send answers, when a test says
+	sends    int              // how many sends reached it
 	accounts []Account
 	grants   map[string]grant  // code → what it was given for
 	keys     map[string]string // key → the device it was made for
@@ -110,6 +118,8 @@ func New(accounts ...Account) *Server {
 	mux.HandleFunc("GET /api/v1/checks/accounts", s.authed(s.listAccounts))
 	mux.HandleFunc("GET /api/v1/accounts/{account}/checks/{number}", s.authed(s.reaches(s.number)))
 	mux.HandleFunc("GET /api/v1/accounts/{account}/payees", s.authed(s.reaches(s.listPayees)))
+	mux.HandleFunc("POST /api/v1/accounts/{account}/checks", s.authed(s.reaches(s.send)))
+	mux.HandleFunc("POST /api/v1/accounts/{account}/checks/{number}/void", s.authed(s.reaches(s.void)))
 
 	s.Server = httptest.NewServer(mux)
 
@@ -195,6 +205,53 @@ func (s *Server) Down(down bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.down = down
+}
+
+// answer is a refusal a test has the next send answer with.
+type answer struct {
+	status               int
+	code, field, problem string
+}
+
+// RefuseNextSend has the next send refused, as Reconcile refuses a role that
+// may not add checks (403), an account archived (422 not_checking), and so
+// on.
+func (s *Server) RefuseNextSend(status int, code, field, problem string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.next = &answer{status, code, field, problem}
+}
+
+// Checks is the account's checks, by number.
+func (s *Server) Checks(account string) map[string]Check {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	out := map[string]Check{}
+	for n, c := range s.book(account).checks {
+		out[n] = *c
+	}
+
+	return out
+}
+
+// Sends is how many sends have reached it, refused ones included.
+func (s *Server) Sends() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.sends
+}
+
+// Attach has the statement attach the account's check: it has cleared.
+func (s *Server) Attach(account, number string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if c := s.book(account).checks[number]; c != nil {
+		c.State = "attached"
+		c.AttachedTo = []Link{{ID: "tx-" + number, URL: s.URL + "/transactions/tx-" + number}}
+	}
 }
 
 // Devices is the device_name of each sign-in agreed to, in order.
@@ -407,6 +464,157 @@ func (s *Server) number(w http.ResponseWriter, r *http.Request) {
 	}
 
 	write(w, http.StatusOK, out)
+}
+
+// send is POST .../checks: the check's details in the query, its image as
+// the body (Reconcile's apiapp/checks.go, sendCheck, and receiptbus's
+// SendCheck).
+func (s *Server) send(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+
+	s.mu.Lock()
+	s.sends++
+	next := s.next
+	s.next = nil
+	s.mu.Unlock()
+
+	if next != nil {
+		Refuse(w, next.status, next.code, next.field, next.problem)
+		return
+	}
+
+	amount, err := money.Parse(q.Get("amount"))
+
+	switch {
+	case q.Get("name") == "":
+		Refuse(w, http.StatusBadRequest, "", "name", "Give the image file's name as ?name=, such as check-1005.pdf.")
+		return
+	case err != nil || amount <= 0:
+		Refuse(w, http.StatusBadRequest, "", "amount", "Give the check's amount as a number without a sign, such as \"12.34\".")
+		return
+	case !isDate(q.Get("written_on")):
+		Refuse(w, http.StatusBadRequest, "", "written_on", "Give the date printed on the check as YYYY-MM-DD.")
+		return
+	case strings.TrimSpace(q.Get("payee")) == "":
+		Refuse(w, http.StatusBadRequest, "", "payee", "Give whom the check is to, as printed on it.")
+		return
+	}
+
+	n, ok := number(q.Get("number"))
+	if !ok {
+		Refuse(w, http.StatusUnprocessableEntity, "", "number", "The number will not do: a check number is digits, at most ten.")
+		return
+	}
+
+	image, err := io.ReadAll(io.LimitReader(r.Body, 20<<20+1))
+
+	switch {
+	case err != nil:
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	case len(image) > 20<<20:
+		Refuse(w, http.StatusRequestEntityTooLarge, "", "", "That image is larger than a check's may be, 20 MB. Nothing was kept.")
+		return
+	case !bytes.HasPrefix(image, []byte("\x89PNG\r\n\x1a\n")):
+		Refuse(w, http.StatusUnsupportedMediaType, "", "", "A check's image is a PNG, JPEG, WebP or HEIC picture, or a PDF, and this file is none of them, by its content. Nothing was kept.")
+		return
+	}
+
+	key, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	b := s.book(r.PathValue("account"))
+	sent := Check{
+		ID: random(), Number: n, Amount: figures(amount), Payee: q.Get("payee"), WrittenOn: q.Get("written_on"),
+		Memo: q.Get("memo"), State: "outstanding", Image: image, Key: key,
+	}
+	sent.URL = s.URL + "/receipts/" + sent.ID
+
+	// A void check is skipped when looking for a repeat (receiptbus): the
+	// same check sent after its void is a new check.
+	if have := b.checks[n]; have != nil && have.State != "void" {
+		if same(have, sent) {
+			write(w, http.StatusOK, map[string]any{"outcome": "already_there", "check": have.view()})
+			return
+		}
+
+		body := map[string]any{
+			"error": map[string]string{"field": "number", "problem": "Check " + n + " in this account says something else: another amount, payee or day. Nothing was kept. If it is the same check, send what it says; if the paper is numbered wrong, void it."},
+			"code":  "number_used", "check": have.view(),
+		}
+		write(w, http.StatusConflict, body)
+
+		return
+	}
+
+	outcome := "outstanding"
+
+	if paid := b.paid[n]; len(paid) > 0 {
+		bank, _ := money.Parse(paid[0].Amount)
+		if bank != amount {
+			write(w, http.StatusConflict, map[string]any{
+				"error": map[string]string{"field": "amount", "problem": "The bank paid check " + n + " for $" + figures(bank) + ", not $" + figures(amount) + ". Nothing was kept. Check which stock is in the printer, or the amount."},
+				"code":  "amount_differs", "bank": figures(bank), "sent": figures(amount),
+			})
+
+			return
+		}
+
+		outcome = "attached"
+		sent.State = "attached"
+		sent.AttachedTo = []Link{{ID: "tx-" + n, URL: s.URL + "/transactions/tx-" + n}}
+		delete(b.paid, n)
+	}
+
+	b.checks[n] = &sent
+
+	write(w, http.StatusCreated, map[string]any{"outcome": outcome, "check": sent.view()})
+}
+
+// same is Reconcile's test for a repeat: the number, the amount, the payee
+// but for case and spaces, and the day. Not the memo.
+func same(a *Check, b Check) bool {
+	fold := func(s string) string { return strings.ToLower(strings.Join(strings.Fields(s), " ")) }
+
+	x, _ := money.Parse(a.Amount)
+	y, _ := money.Parse(b.Amount)
+
+	return x == y && fold(a.Payee) == fold(b.Payee) && a.WrittenOn == b.WrittenOn
+}
+
+func (s *Server) void(w http.ResponseWriter, r *http.Request) {
+	n, ok := number(r.PathValue("number"))
+	if !ok {
+		Refuse(w, http.StatusUnprocessableEntity, "", "number", "The number will not do: a check number is digits, at most ten.")
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	c := s.book(r.PathValue("account")).checks[n]
+
+	switch {
+	case c == nil:
+		Refuse(w, http.StatusNotFound, "no_check", "number", "No check in this account has that number. Nothing was voided.")
+	case c.State == "attached":
+		Refuse(w, http.StatusConflict, "cleared", "number", "That check has cleared: the bank paid it, and it is on its transaction. It cannot be voided.")
+	default:
+		c.State = "void"
+		write(w, http.StatusOK, map[string]any{"check": c.view()})
+	}
+}
+
+// figures is cents as Reconcile writes an amount: 1234.50.
+func figures(c money.Cents) string {
+	return strconv.FormatInt(int64(c)/100, 10) + "." + fmt.Sprintf("%02d", int64(c)%100)
+}
+
+func isDate(s string) bool {
+	_, err := time.Parse(time.DateOnly, s)
+	return err == nil
 }
 
 func (c *Check) view() Check {

@@ -428,3 +428,27 @@ func (b *Business) Payees(ctx context.Context, account, q string) ([]string, err
 
 	return names, b.answered(err)
 }
+
+// Send sends a check to one of Reconcile's accounts.
+func (b *Business) Send(ctx context.Context, account string, out reconcile.Outgoing, image []byte) (reconcile.Sent, error) {
+	key, err := b.usable()
+	if err != nil {
+		return reconcile.Sent{}, err
+	}
+
+	s, err := b.cfg.Client.Send(ctx, key, account, out, image)
+
+	return s, b.answered(err)
+}
+
+// Void voids a check on one of Reconcile's accounts.
+func (b *Business) Void(ctx context.Context, account string, number int) error {
+	key, err := b.usable()
+	if err != nil {
+		return err
+	}
+
+	_, err = b.cfg.Client.Void(ctx, key, account, number)
+
+	return b.answered(err)
+}

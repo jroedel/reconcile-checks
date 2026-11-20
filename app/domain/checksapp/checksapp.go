@@ -5,6 +5,7 @@
 package checksapp
 
 import (
+	"context"
 	"embed"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jroedel/reconcile-checks/app/sdk/page"
 	"github.com/jroedel/reconcile-checks/business/domain/check/checkbus"
@@ -52,6 +54,7 @@ type listView struct {
 	Show   string // all, void, unsent
 	Unsent int
 	Error  string
+	Notice string // after Send now
 }
 
 // List is the register.
@@ -62,6 +65,15 @@ func (a *App) List(w http.ResponseWriter, r *http.Request) {
 	unsent, uerr := a.cfg.Checks.Unsent(r.Context())
 
 	v := listView{Show: show, Unsent: len(unsent), Error: sentence(errors.Join(err, uerr))}
+
+	if q := r.URL.Query(); q.Has("sent") {
+		n, _ := strconv.Atoi(q.Get("sent"))
+		v.Notice = fmt.Sprintf("Sent %d %s to Reconcile.", n, plural(n, "check", "checks"))
+
+		if stopped := q.Get("stopped"); stopped != "" {
+			v.Error = "Sending stopped: " + stopped
+		}
+	}
 
 	switch show {
 	case "void":
@@ -135,6 +147,9 @@ func (a *App) Void(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Sent, then voided, in Reconcile by the register's own pass.
+	a.cfg.Checks.Nudge()
+
 	http.Redirect(w, r, checkPage(c.Account, c.Number)+"?done=void", http.StatusSeeOther)
 }
 
@@ -155,7 +170,28 @@ func (a *App) Renumber(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The corrected number goes to Reconcile afresh.
+	a.cfg.Checks.Nudge()
+
 	http.Redirect(w, r, checkPage(c.Account, to)+"?done=renumbered", http.StatusSeeOther)
+}
+
+// sendWithin is how long Send now waits for Reconcile.
+const sendWithin = time.Minute
+
+// SendNow sends everything waiting, refused or not yet due included: the
+// person has looked, and perhaps fixed what Reconcile refused there.
+func (a *App) SendNow(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), sendWithin)
+	defer cancel()
+
+	n, err := a.cfg.Checks.SendDue(ctx, true)
+	if err != nil {
+		http.Redirect(w, r, "/checks?show=unsent&sent="+strconv.Itoa(n)+"&stopped="+url.QueryEscape(sentence(err)), http.StatusSeeOther)
+		return
+	}
+
+	http.Redirect(w, r, "/checks?show=unsent&sent="+strconv.Itoa(n), http.StatusSeeOther)
 }
 
 func (a *App) show(w http.ResponseWriter, r *http.Request, status int, v checkView) {
@@ -170,6 +206,9 @@ func sending(c checkbus.Check) string {
 		return "Not yet: nobody has said whether it printed correctly."
 	case c.Send.Refusal != "":
 		return "Reconcile refused it: " + c.Send.Refusal
+	case !c.Send.NextTry.IsZero():
+		return fmt.Sprintf("Waiting to be sent: Reconcile couldn't be reached (tried %d %s). It is tried again %s, or with Send now.",
+			c.Send.Attempts, plural(c.Send.Attempts, "time", "times"), c.Send.NextTry.Format("at 3:04 PM"))
 	case c.State == checkbus.Void && !c.Send.VoidSentAt.IsZero():
 		return "Reconcile has it, voided."
 	case !c.Send.SentAt.IsZero() && c.State == checkbus.Void:
@@ -179,6 +218,14 @@ func sending(c checkbus.Check) string {
 	default:
 		return "Waiting to be sent to Reconcile."
 	}
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+
+	return many
 }
 
 func (a *App) get(w http.ResponseWriter, r *http.Request) (checkbus.Check, bool) {

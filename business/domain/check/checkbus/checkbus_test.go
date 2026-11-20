@@ -47,8 +47,9 @@ func setup(t *testing.T) *env {
 	return setupWith(t, nil)
 }
 
-// setupWith is a register asking books as Reconcile; nil for none.
-func setupWith(t *testing.T, books checkbus.Books) *env {
+// setupWith is a register asking books as Reconcile, nil for none, and
+// sending to sender, if one is given.
+func setupWith(t *testing.T, books checkbus.Books, sender ...checkbus.Sender) *env {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -80,7 +81,7 @@ func setupWith(t *testing.T, books checkbus.Books) *env {
 		},
 	}
 
-	e.bus = checkbus.New(checkbus.Config{
+	cfg := checkbus.Config{
 		Store: e.store,
 		Files: e.files,
 		Accounts: accounts{
@@ -90,7 +91,12 @@ func setupWith(t *testing.T, books checkbus.Books) *env {
 		},
 		Now:   func() time.Time { return *e.now },
 		Books: books,
-	})
+	}
+	if len(sender) > 0 {
+		cfg.Sender = sender[0]
+	}
+
+	e.bus = checkbus.New(cfg)
 
 	return e
 }

@@ -2,12 +2,19 @@
 {{define "content"}}
 {{with .Data}}
 <h1>Checks</h1>
+{{if .Notice}}<p class="notice ok" role="status">{{.Notice}}</p>{{end}}
 {{if .Error}}<p class="notice" role="alert">{{.Error}}</p>{{end}}
 <p>
 <a href="/checks"{{if eq .Show "all"}} aria-current="page"{{end}}>All</a> ·
 <a href="/checks?show=unsent"{{if eq .Show "unsent"}} aria-current="page"{{end}}>Waiting for Reconcile ({{.Unsent}})</a> ·
 <a href="/checks?show=void"{{if eq .Show "void"}} aria-current="page"{{end}}>Void</a>
 </p>
+{{if .Unsent}}
+<form method="post" action="/checks/send" class="inline">
+<input type="hidden" name="form_token" value="{{$.FormToken}}">
+<button type="submit" class="quiet">Send now</button>
+</form>
+{{end}}
 {{if .Checks}}
 <table class="register">
 <thead><tr><th>No.</th><th>Date</th><th>Pay to</th><th class="num">Amount</th><th>Memo</th><th></th></tr></thead>
@@ -18,7 +25,7 @@
 <td>{{.Payee}}</td>
 <td class="num">{{.Amount}}</td>
 <td>{{.Memo}}</td>
-<td>{{if eq .State "void"}}void{{else if eq .State "printing"}}not answered{{else if .Send.SentAt.IsZero}}not sent{{end}}</td>
+<td>{{if eq .State "printing"}}not answered{{else}}{{if eq .State "void"}}void{{end}}{{if .Send.Refusal}}{{if eq .State "void"}}; {{end}}<strong>refused</strong>{{else if .Send.SentAt.IsZero}}{{if eq .State "void"}}; {{end}}not sent{{else if and (eq .State "void") .Send.VoidSentAt.IsZero}}; void not sent{{else if .Send.URL}}{{if eq .State "void"}}; {{end}}<a href="{{.Send.URL}}">in Reconcile</a>{{end}}{{end}}</td>
 </tr>
 {{end}}</tbody>
 </table>

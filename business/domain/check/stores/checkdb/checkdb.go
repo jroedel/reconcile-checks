@@ -334,6 +334,40 @@ WHERE (state IN ('printed', 'void') AND sent_at IS NULL)
 ORDER BY created_at, number`)
 }
 
+// MarkSent keeps Reconcile having taken the check.
+func (s *Store) MarkSent(ctx context.Context, account string, number int, id, url string, at time.Time) error {
+	return s.change(ctx, "marking sent", number, `
+UPDATE checks SET sent_at = ?, reconcile_id = ?, reconcile_url = ?, refusal = '', conflict = '', send_attempts = 0, next_try = NULL
+WHERE account = ? AND number = ? AND sent_at IS NULL AND state IN ('printed', 'void')`, at.UnixMilli(), id, url, account, number)
+}
+
+// MarkVoidSent keeps Reconcile having voided the check.
+func (s *Store) MarkVoidSent(ctx context.Context, account string, number int, at time.Time) error {
+	return s.change(ctx, "marking the void sent", number, `
+UPDATE checks SET void_sent_at = ?, refusal = '', conflict = '', send_attempts = 0, next_try = NULL
+WHERE account = ? AND number = ? AND state = 'void' AND sent_at IS NOT NULL AND void_sent_at IS NULL`, at.UnixMilli(), account, number)
+}
+
+// MarkFailed keeps a try that failed.
+func (s *Store) MarkFailed(ctx context.Context, account string, number int, attempts int, next time.Time, refusal, conflict string) error {
+	var at any
+	if !next.IsZero() {
+		at = next.UnixMilli()
+	}
+
+	return s.change(ctx, "keeping a try to send", number, `
+UPDATE checks SET send_attempts = ?, next_try = ?, refusal = ?, conflict = ?
+WHERE account = ? AND number = ?`, attempts, at, refusal, conflict, account, number)
+}
+
+// Unsend forgets a send whose check Reconcile doesn't have, so that it is
+// sent again; never once its void is sent, after which it must never be.
+func (s *Store) Unsend(ctx context.Context, account string, number int) error {
+	return s.change(ctx, "sending again", number, `
+UPDATE checks SET sent_at = NULL, reconcile_id = '', reconcile_url = ''
+WHERE account = ? AND number = ? AND void_sent_at IS NULL`, account, number)
+}
+
 func (s *Store) list(ctx context.Context, where string, args ...any) ([]checkbus.Check, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT `+columns+` FROM checks `+where, args...)
 	if err != nil {
